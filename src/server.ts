@@ -1,9 +1,9 @@
-const app = require('./app');
-const env = require('./config/env');
-const { connectMongo, disconnectMongo } = require('./config/database');
-const { connectRedis, disconnectRedis } = require('./config/redis');
+import app from './app';
+import { connectMongo, disconnectMongo } from './config/database';
+import env from './config/env';
+import { connectRedis, disconnectRedis } from './config/redis';
 
-async function bootstrap() {
+async function bootstrap(): Promise<void> {
   await connectMongo();
   await connectRedis();
 
@@ -11,7 +11,7 @@ async function bootstrap() {
     console.log(`Payment processor listening on port ${env.port}`);
   });
 
-  async function shutdown(signal) {
+  async function shutdown(signal: NodeJS.Signals): Promise<void> {
     console.log(`${signal} received, shutting down`);
 
     server.close(async () => {
@@ -24,7 +24,7 @@ async function bootstrap() {
   process.on('SIGTERM', shutdown);
 }
 
-bootstrap().catch((error) => {
+bootstrap().catch((error: unknown) => {
   console.error('Failed to start application', error);
   process.exit(1);
 });

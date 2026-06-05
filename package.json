@@ -2,12 +2,15 @@
   "name": "payment-processor",
   "version": "1.0.0",
   "description": "Small Express service for merchant invoices and payment webhooks.",
-  "main": "src/server.js",
+  "main": "dist/server.js",
   "scripts": {
-    "dev": "nodemon src/server.js",
-    "start": "node src/server.js",
-    "test": "jest --runInBand",
-    "test:watch": "jest --watch"
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "seed:merchant": "tsx src/scripts/seed-merchant.ts",
+    "start": "node dist/server.js",
+    "test": "NODE_ENV=test jest --coverage --runInBand",
+    "test:watch": "NODE_ENV=test jest --watch",
+    "typecheck": "tsc --noEmit -p tsconfig.test.json"
   },
   "keywords": [],
   "author": "",
@@ -20,12 +23,62 @@
     "mongoose": "^9.6.3",
     "morgan": "^1.11.0",
     "redis": "^6.0.0",
+    "swagger-ui-express": "^5.0.1",
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@swc/core": "^1.15.40",
+    "@swc/jest": "^0.2.39",
+    "@types/express": "^5.0.6",
+    "@types/jest": "^30.0.0",
+    "@types/morgan": "^1.9.10",
+    "@types/node": "^25.9.1",
+    "@types/supertest": "^7.2.0",
+    "@types/swagger-ui-express": "^4.1.8",
     "jest": "^30.4.2",
     "mongodb-memory-server": "^11.2.0",
-    "nodemon": "^3.1.14",
-    "supertest": "^7.2.2"
+    "supertest": "^7.2.2",
+    "tsx": "^4.22.4",
+    "typescript": "^6.0.3"
+  },
+  "jest": {
+    "clearMocks": true,
+    "coverageProvider": "v8",
+    "testEnvironment": "node",
+    "testMatch": [
+      "<rootDir>/tests/**/*.test.ts"
+    ],
+    "transform": {
+      "^.+\\.ts$": [
+        "@swc/jest",
+        {
+          "jsc": {
+            "parser": {
+              "syntax": "typescript"
+            },
+            "target": "es2022"
+          },
+          "module": {
+            "type": "commonjs"
+          }
+        }
+      ]
+    },
+    "collectCoverageFrom": [
+      "src/**/*.ts",
+      "!src/server.ts",
+      "!src/config/database.ts",
+      "!src/config/redis.ts",
+      "!src/scripts/**",
+      "!src/types/**"
+    ],
+    "coverageThreshold": {
+      "global": {
+        "branches": 100,
+        "functions": 100,
+        "lines": 100,
+        "statements": 100
+      }
+    }
   }
 }
