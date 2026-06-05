@@ -1,9 +1,9 @@
-const express = require('express');
-const helmet = require('helmet');
-const morgan = require('morgan');
+import express from 'express';
+import helmet from 'helmet';
+import morgan from 'morgan';
 
-const routes = require('./routes');
-const { errorHandler, notFoundHandler } = require('./middleware/error-handler');
+import { errorHandler, notFoundHandler } from './middleware/error-handler';
+import routes from './routes';
 
 const app = express();
 
@@ -17,7 +17,7 @@ app.use(
   express.json({
     limit: '1mb',
     verify: (req, _res, buffer) => {
-      req.rawBody = buffer;
+      (req as express.Request).rawBody = Buffer.from(buffer);
     },
   }),
 );
@@ -26,4 +26,4 @@ app.use(routes);
 app.use(notFoundHandler);
 app.use(errorHandler);
 
-module.exports = app;
+export default app;
