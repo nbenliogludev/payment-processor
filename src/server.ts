@@ -7,8 +7,8 @@ async function bootstrap(): Promise<void> {
   await connectMongo();
   await connectRedis();
 
-  const server = app.listen(env.port, () => {
-    console.log(`Payment processor listening on port ${env.port}`);
+  const server = app.listen(env.port, env.host, () => {
+    console.log(`Payment processor listening on ${env.host}:${env.port}`);
   });
 
   async function shutdown(signal: NodeJS.Signals): Promise<void> {

@@ -1,50 +1,116 @@
-import mongoose from 'mongoose';
-import { MongoMemoryServer } from 'mongodb-memory-server';
-import request from 'supertest';
+const mockMerchantFindOne = jest.fn();
+const mockInvoiceCreate = jest.fn();
+const mockInvoiceFindById = jest.fn();
+
+jest.mock('../src/models/merchant.model', () => ({
+  __esModule: true,
+  default: {
+    findOne: (...args: unknown[]) => mockMerchantFindOne(...args),
+  },
+}));
+
+jest.mock('../src/models/invoice.model', () => ({
+  __esModule: true,
+  default: {
+    create: (...args: unknown[]) => mockInvoiceCreate(...args),
+    findById: (...args: unknown[]) => mockInvoiceFindById(...args),
+  },
+}));
 
 import app from '../src/app';
-import InvoiceModel from '../src/models/invoice.model';
-import MerchantModel from '../src/models/merchant.model';
+import { invokeApp } from './helpers/invoke-app';
 
-let mongoServer: MongoMemoryServer | undefined;
+const invoiceId = '665f6f1e8b3f3d49e57a6e11';
+const missingInvoiceId = '665f6f1e8b3f3d49e57a6e12';
 
-beforeAll(async () => {
-  mongoServer = await MongoMemoryServer.create({
-    instance: {
-      ip: '127.0.0.1',
-    },
-  });
-  await mongoose.connect(mongoServer.getUri());
-});
+interface MockInvoice {
+  _id: string;
+  merchantId: string;
+  currency: string;
+  currencyScale: number;
+  amountMinor: string;
+  feePercent: string;
+  feeMinor: string;
+  amountToReceiveMinor: string;
+  status: 'pending' | 'paid' | 'failed';
+}
 
-beforeEach(async () => {
-  await Promise.all([InvoiceModel.deleteMany({}), MerchantModel.deleteMany({})]);
-});
+interface ApiResponse<T> {
+  data: T;
+}
 
-afterAll(async () => {
-  await mongoose.disconnect();
+interface ApiErrorResponse {
+  error: {
+    message: string;
+    details?: Array<{ path: string; message: string }>;
+  };
+}
 
-  if (mongoServer) {
-    await mongoServer.stop();
-  }
+function leanQuery<T>(value: T) {
+  return {
+    lean: jest.fn().mockReturnValue({
+      exec: jest.fn().mockResolvedValue(value),
+    }),
+  };
+}
+
+function execQuery<T>(value: T) {
+  return {
+    exec: jest.fn().mockResolvedValue(value),
+  };
+}
+
+function makeInvoice(overrides: Partial<MockInvoice> = {}): MockInvoice {
+  return {
+    _id: invoiceId,
+    merchantId: 'merchant-1',
+    currency: 'USD',
+    currencyScale: 2,
+    amountMinor: '10000',
+    feePercent: '2.5',
+    feeMinor: '250',
+    amountToReceiveMinor: '9750',
+    status: 'pending',
+    ...overrides,
+  };
+}
+
+function bodyAs<T>(response: { body: unknown }): T {
+  return response.body as T;
+}
+
+function mockMerchant(feePercent = '2.5'): void {
+  mockMerchantFindOne.mockReturnValue(leanQuery({ merchantId: 'merchant-1', feePercent }));
+}
+
+function mockInvoiceCreation(): void {
+  mockInvoiceCreate.mockImplementation(async (payload: Partial<MockInvoice>) =>
+    makeInvoice({ _id: invoiceId, ...payload }),
+  );
+}
+
+beforeEach(() => {
+  jest.clearAllMocks();
+  mockInvoiceCreation();
 });
 
 describe('POST /invoice', () => {
   it('creates a pending invoice with calculated fee and amount to receive', async () => {
-    await MerchantModel.create({
-      merchantId: 'merchant-1',
-      feePercent: '2.5',
-    });
+    mockMerchant();
 
-    const response = await request(app).post('/invoice').send({
-      amount: '100.00',
-      currency: 'usd',
-      merchantId: 'merchant-1',
+    const response = await invokeApp(app, {
+      method: 'POST',
+      path: '/invoice',
+      body: {
+        amount: '100.00',
+        currency: 'usd',
+        merchantId: 'merchant-1',
+      },
     });
 
     expect(response.status).toBe(201);
-    expect(response.body.data).toEqual({
-      invoiceId: expect.any(String),
+    expect(bodyAs<ApiResponse<MockInvoice>>(response).data).toEqual({
+      invoiceId,
       merchantId: 'merchant-1',
       amount: '100.00',
       currency: 'USD',
@@ -53,38 +119,34 @@ describe('POST /invoice', () => {
       amountToReceive: '97.50',
       status: 'pending',
     });
-
-    const invoice = await InvoiceModel.findById(response.body.data.invoiceId).lean().exec();
-
-    expect(invoice).toEqual(
-      expect.objectContaining({
-        merchantId: 'merchant-1',
-        currency: 'USD',
-        currencyScale: 2,
-        amountMinor: '10000',
-        feePercent: '2.5',
-        feeMinor: '250',
-        amountToReceiveMinor: '9750',
-        status: 'pending',
-      }),
-    );
+    expect(mockInvoiceCreate).toHaveBeenCalledWith({
+      merchantId: 'merchant-1',
+      currency: 'USD',
+      currencyScale: 2,
+      amountMinor: '10000',
+      feePercent: '2.5',
+      feeMinor: '250',
+      amountToReceiveMinor: '9750',
+      status: 'pending',
+    });
   });
 
   it('uses currency-specific minor units and rounding rules', async () => {
-    await MerchantModel.create({
-      merchantId: 'merchant-1',
-      feePercent: '2.5',
-    });
+    mockMerchant();
 
-    const response = await request(app).post('/invoice').send({
-      amount: '10.123',
-      currency: 'KWD',
-      merchantId: 'merchant-1',
+    const response = await invokeApp(app, {
+      method: 'POST',
+      path: '/invoice',
+      body: {
+        amount: '10.123',
+        currency: 'KWD',
+        merchantId: 'merchant-1',
+      },
     });
 
     expect(response.status).toBe(201);
-    expect(response.body.data).toEqual({
-      invoiceId: expect.any(String),
+    expect(bodyAs<ApiResponse<MockInvoice>>(response).data).toEqual({
+      invoiceId,
       merchantId: 'merchant-1',
       amount: '10.123',
       currency: 'KWD',
@@ -93,10 +155,7 @@ describe('POST /invoice', () => {
       amountToReceive: '9.870',
       status: 'pending',
     });
-
-    const invoice = await InvoiceModel.findById(response.body.data.invoiceId).lean().exec();
-
-    expect(invoice).toEqual(
+    expect(mockInvoiceCreate).toHaveBeenCalledWith(
       expect.objectContaining({
         currency: 'KWD',
         currencyScale: 3,
@@ -108,19 +167,20 @@ describe('POST /invoice', () => {
   });
 
   it('supports zero-decimal currencies', async () => {
-    await MerchantModel.create({
-      merchantId: 'merchant-1',
-      feePercent: '2.5',
-    });
+    mockMerchant();
 
-    const response = await request(app).post('/invoice').send({
-      amount: '100',
-      currency: 'JPY',
-      merchantId: 'merchant-1',
+    const response = await invokeApp(app, {
+      method: 'POST',
+      path: '/invoice',
+      body: {
+        amount: '100',
+        currency: 'JPY',
+        merchantId: 'merchant-1',
+      },
     });
 
     expect(response.status).toBe(201);
-    expect(response.body.data).toEqual(
+    expect(bodyAs<ApiResponse<MockInvoice>>(response).data).toEqual(
       expect.objectContaining({
         amount: '100',
         currency: 'JPY',
@@ -131,58 +191,76 @@ describe('POST /invoice', () => {
   });
 
   it('returns 404 when merchant settings are missing', async () => {
-    const response = await request(app).post('/invoice').send({
-      amount: '100.00',
-      currency: 'USD',
-      merchantId: 'unknown-merchant',
+    mockMerchantFindOne.mockReturnValue(leanQuery(null));
+
+    const response = await invokeApp(app, {
+      method: 'POST',
+      path: '/invoice',
+      body: {
+        amount: '100.00',
+        currency: 'USD',
+        merchantId: 'unknown-merchant',
+      },
     });
 
     expect(response.status).toBe(404);
-    expect(response.body.error.message).toBe('Merchant not found');
+    expect(bodyAs<ApiErrorResponse>(response).error.message).toBe('Merchant not found');
   });
 
   it('rejects amounts with more than two decimal places', async () => {
-    await MerchantModel.create({
-      merchantId: 'merchant-1',
-      feePercent: '2.5',
-    });
+    mockMerchant();
 
-    const response = await request(app).post('/invoice').send({
-      amount: '100.001',
-      currency: 'USD',
-      merchantId: 'merchant-1',
+    const response = await invokeApp(app, {
+      method: 'POST',
+      path: '/invoice',
+      body: {
+        amount: '100.001',
+        currency: 'USD',
+        merchantId: 'merchant-1',
+      },
     });
 
     expect(response.status).toBe(400);
-    expect(response.body.error.message).toBe('amount must have at most 2 decimal places');
+    expect(bodyAs<ApiErrorResponse>(response).error.message).toBe(
+      'amount must have at most 2 decimal places',
+    );
   });
 
   it('rejects invalid request bodies', async () => {
-    const response = await request(app).post('/invoice').send({
-      amount: '',
-      currency: 'US',
-      merchantId: '',
+    const response = await invokeApp(app, {
+      method: 'POST',
+      path: '/invoice',
+      body: {
+        amount: '',
+        currency: 'US',
+        merchantId: '',
+      },
     });
 
     expect(response.status).toBe(400);
-    expect(response.body.error.message).toBe('Invalid request body');
-    expect(response.body.error.details).toEqual(
+    expect(bodyAs<ApiErrorResponse>(response).error.message).toBe('Invalid request body');
+    expect(bodyAs<ApiErrorResponse>(response).error.details).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ path: 'currency' }),
         expect.objectContaining({ path: 'merchantId' }),
       ]),
     );
+    expect(mockMerchantFindOne).not.toHaveBeenCalled();
   });
 
   it('rejects numeric amounts and non-letter currency codes', async () => {
-    const response = await request(app).post('/invoice').send({
-      amount: 100,
-      currency: '123',
-      merchantId: 'merchant-1',
+    const response = await invokeApp(app, {
+      method: 'POST',
+      path: '/invoice',
+      body: {
+        amount: 100,
+        currency: '123',
+        merchantId: 'merchant-1',
+      },
     });
 
     expect(response.status).toBe(400);
-    expect(response.body.error.details).toEqual(
+    expect(bodyAs<ApiErrorResponse>(response).error.details).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ path: 'amount' }),
         expect.objectContaining({
@@ -194,40 +272,35 @@ describe('POST /invoice', () => {
   });
 
   it('rejects unsupported currencies', async () => {
-    await MerchantModel.create({
-      merchantId: 'merchant-1',
-      feePercent: '2.5',
-    });
+    mockMerchant();
 
-    const response = await request(app).post('/invoice').send({
-      amount: '100.00',
-      currency: 'BTC',
-      merchantId: 'merchant-1',
+    const response = await invokeApp(app, {
+      method: 'POST',
+      path: '/invoice',
+      body: {
+        amount: '100.00',
+        currency: 'BTC',
+        merchantId: 'merchant-1',
+      },
     });
 
     expect(response.status).toBe(400);
-    expect(response.body.error.message).toBe('Unsupported currency: BTC');
+    expect(bodyAs<ApiErrorResponse>(response).error.message).toBe('Unsupported currency: BTC');
   });
 });
 
 describe('GET /invoice/:id', () => {
   it('returns current invoice status and calculated amounts', async () => {
-    const invoice = await InvoiceModel.create({
-      merchantId: 'merchant-1',
-      currency: 'USD',
-      currencyScale: 2,
-      amountMinor: '10000',
-      feePercent: '2.5',
-      feeMinor: '250',
-      amountToReceiveMinor: '9750',
-      status: 'pending',
+    mockInvoiceFindById.mockReturnValue(execQuery(makeInvoice()));
+
+    const response = await invokeApp(app, {
+      method: 'GET',
+      path: `/invoice/${invoiceId}`,
     });
 
-    const response = await request(app).get(`/invoice/${invoice._id.toString()}`);
-
     expect(response.status).toBe(200);
-    expect(response.body.data).toEqual({
-      invoiceId: invoice._id.toString(),
+    expect(bodyAs<ApiResponse<MockInvoice>>(response).data).toEqual({
+      invoiceId,
       merchantId: 'merchant-1',
       amount: '100.00',
       currency: 'USD',
@@ -239,17 +312,25 @@ describe('GET /invoice/:id', () => {
   });
 
   it('returns 404 when invoice does not exist', async () => {
-    const missingInvoiceId = new mongoose.Types.ObjectId().toString();
-    const response = await request(app).get(`/invoice/${missingInvoiceId}`);
+    mockInvoiceFindById.mockReturnValue(execQuery(null));
+
+    const response = await invokeApp(app, {
+      method: 'GET',
+      path: `/invoice/${missingInvoiceId}`,
+    });
 
     expect(response.status).toBe(404);
-    expect(response.body.error.message).toBe('Invoice not found');
+    expect(bodyAs<ApiErrorResponse>(response).error.message).toBe('Invoice not found');
   });
 
   it('returns 400 for invalid invoice ids', async () => {
-    const response = await request(app).get('/invoice/not-a-valid-id');
+    const response = await invokeApp(app, {
+      method: 'GET',
+      path: '/invoice/not-a-valid-id',
+    });
 
     expect(response.status).toBe(400);
-    expect(response.body.error.message).toBe('Invalid invoice id');
+    expect(bodyAs<ApiErrorResponse>(response).error.message).toBe('Invalid invoice id');
+    expect(mockInvoiceFindById).not.toHaveBeenCalled();
   });
 });
