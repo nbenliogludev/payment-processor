@@ -2,7 +2,7 @@
 
 A small backend service for payment processing. A merchant creates an invoice, the payment provider later sends a webhook with the payment status, and the backend safely updates the invoice and credits the merchant balance.
 
-## What's Inside 🧰
+## What's Inside
 
 - Node.js + Express + TypeScript
 - MongoDB + Mongoose
@@ -11,7 +11,7 @@ A small backend service for payment processing. A merchant creates an invoice, t
 - Swagger UI
 - Jest coverage 100%
 
-## How It Works 🔁
+## How It Works
 
 ```mermaid
 flowchart LR
@@ -39,7 +39,7 @@ Main flow:
 6. The backend verifies the signature, timestamp, and nonce.
 7. If the status is `paid`, the merchant balance is credited exactly once inside a MongoDB transaction.
 
-## Quick Start 🚀
+## Quick Start
 
 ```bash
 npm install
@@ -154,7 +154,7 @@ curl -X POST http://localhost:3000/webhook \
 
 Important: the signature is calculated from the exact JSON string sent in `-d`. If you add spaces or change the field order, recalculate the signature.
 
-## Webhook Security 🔐
+## Webhook Security
 
 ```mermaid
 flowchart TD
@@ -175,7 +175,7 @@ The protection has several layers:
 - Nonce is stored in Redis for 5 minutes and protects against repeated delivery of the same request.
 - Invoice status plus a unique ledger index protect against double crediting.
 
-## Money and Precision 💸
+## Money and Precision
 
 `amount` is sent as a string, for example `"100.00"`. Calculations use `Decimal`, so there are no floating-point rounding surprises.
 
@@ -187,7 +187,7 @@ MongoDB stores money in minor units:
 
 This makes money safe to store, compare, and add.
 
-## Idempotency ✅
+## Idempotency
 
 A repeated webhook must not credit money twice.
 
@@ -198,7 +198,7 @@ This project handles that in a few layers:
 - Ledger entries have a unique `invoiceId`.
 - Invoice status, ledger entry, and merchant balance are updated in one MongoDB transaction.
 
-## Where to Look in the Code 🗂️
+## Where to Look in the Code
 
 - `src/routes` - HTTP routes.
 - `src/controllers` - HTTP layer: headers/body in, response out.
@@ -215,7 +215,7 @@ Most important files:
 - `src/services/webhook.service.ts` - transaction, idempotency, balance update.
 - `src/models/ledger-entry.model.ts` - unique ledger entry per invoice.
 
-## Tests 🧪
+## Tests
 
 ```bash
 npm run typecheck
