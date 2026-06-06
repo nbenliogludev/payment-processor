@@ -86,6 +86,31 @@ curl -X POST http://localhost:3000/invoice \
 }
 ```
 
+### GET /invoice/:id
+
+Возвращает текущий статус и рассчитанные суммы по инвойсу.
+
+```bash
+curl http://localhost:3000/invoice/665f6f1e8b3f3d49e57a6e11
+```
+
+Пример ответа:
+
+```json
+{
+  "data": {
+    "invoiceId": "665f6f1e8b3f3d49e57a6e11",
+    "merchantId": "merchant-1",
+    "amount": "100.00",
+    "currency": "USD",
+    "feePercent": "2.5",
+    "fee": "2.50",
+    "amountToReceive": "97.50",
+    "status": "pending"
+  }
+}
+```
+
 ## Структура
 
 - `routes` описывают URL и middleware.
@@ -112,6 +137,6 @@ npm start
 
 ## Текущий статус
 
-Реализовано создание инвойса: настройки комиссии берутся из коллекции мерчантов, суммы считаются через decimal arithmetic, а в MongoDB сохраняются как integer minor units (`amountMinor`, `feeMinor`, `amountToReceiveMinor`) вместе с `currencyScale`. `feePercent` считается обычным процентом: `2.5` означает `2.5%`. Мерчанты пока считаются заранее заведенными в базе.
+Реализовано создание и получение инвойса: настройки комиссии берутся из коллекции мерчантов, суммы считаются через decimal arithmetic, а в MongoDB сохраняются как integer minor units (`amountMinor`, `feeMinor`, `amountToReceiveMinor`) вместе с `currencyScale`. `feePercent` считается обычным процентом: `2.5` означает `2.5%`. Мерчанты пока считаются заранее заведенными в базе.
 
 Следующие шаги: webhook-подпись, nonce/idempotency, получение статуса инвойса и тесты денежных сценариев webhook.
