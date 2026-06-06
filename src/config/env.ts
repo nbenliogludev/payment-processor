@@ -4,6 +4,7 @@ dotenv.config({ quiet: true });
 
 export interface EnvConfig {
   nodeEnv: string;
+  host: string;
   port: number;
   mongoUri: string;
   redisUrl: string;
@@ -24,6 +25,7 @@ function numberFromEnv(name: string, fallback: number): number {
 
 const env: EnvConfig = {
   nodeEnv: process.env.NODE_ENV || 'development',
+  host: process.env.HOST || '0.0.0.0',
   port: numberFromEnv('PORT', 3000),
   mongoUri: process.env.MONGO_URI || 'mongodb://localhost:27017/payment_processor',
   redisUrl: process.env.REDIS_URL || 'redis://localhost:6379',

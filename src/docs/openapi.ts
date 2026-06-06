@@ -20,6 +20,10 @@ const openApiSpec = {
       name: 'Invoices',
       description: 'Merchant invoice operations',
     },
+    {
+      name: 'Webhooks',
+      description: 'Payment provider notifications',
+    },
   ],
   paths: {
     '/health': {
@@ -167,6 +171,130 @@ const openApiSpec = {
         },
       },
     },
+    '/webhook': {
+      post: {
+        tags: ['Webhooks'],
+        summary: 'Receive payment status webhook',
+        description:
+          'Receives a signed payment status notification from the payment provider.',
+        parameters: [
+          {
+            name: 'X-Signature',
+            in: 'header',
+            required: true,
+            schema: {
+              type: 'string',
+              example: 'sha256=8f5d...',
+            },
+            description: 'HMAC-SHA256 signature of the raw JSON request body.',
+          },
+          {
+            name: 'X-Timestamp',
+            in: 'header',
+            required: true,
+            schema: {
+              type: 'string',
+              example: '1765140900000',
+            },
+            description: 'Unix timestamp in milliseconds or seconds.',
+          },
+          {
+            name: 'X-Nonce',
+            in: 'header',
+            required: true,
+            schema: {
+              type: 'string',
+              example: '7f8a8b6d-3b6e-43d7-9b2a-7c20e21c5b41',
+            },
+            description: 'Unique request nonce stored temporarily in Redis.',
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                $ref: '#/components/schemas/WebhookRequest',
+              },
+              examples: {
+                paid: {
+                  summary: 'Paid invoice',
+                  value: {
+                    invoiceId: '665f6f1e8b3f3d49e57a6e11',
+                    status: 'paid',
+                  },
+                },
+                failed: {
+                  summary: 'Failed invoice',
+                  value: {
+                    invoiceId: '665f6f1e8b3f3d49e57a6e11',
+                    status: 'failed',
+                  },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          '200': {
+            description: 'Webhook accepted',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['data'],
+                  properties: {
+                    data: {
+                      $ref: '#/components/schemas/Invoice',
+                    },
+                  },
+                },
+              },
+            },
+          },
+          '400': {
+            description: 'Invalid request body or invoice id',
+            content: {
+              'application/json': {
+                schema: {
+                  $ref: '#/components/schemas/ErrorResponse',
+                },
+              },
+            },
+          },
+          '401': {
+            description: 'Invalid signature or timestamp',
+            content: {
+              'application/json': {
+                schema: {
+                  $ref: '#/components/schemas/ErrorResponse',
+                },
+              },
+            },
+          },
+          '404': {
+            description: 'Invoice not found',
+            content: {
+              'application/json': {
+                schema: {
+                  $ref: '#/components/schemas/ErrorResponse',
+                },
+              },
+            },
+          },
+          '409': {
+            description: 'Duplicate nonce or conflicting final invoice status',
+            content: {
+              'application/json': {
+                schema: {
+                  $ref: '#/components/schemas/ErrorResponse',
+                },
+              },
+            },
+          },
+        },
+      },
+    },
   },
   components: {
     schemas: {
@@ -220,6 +348,22 @@ const openApiSpec = {
             type: 'string',
             enum: ['pending', 'paid', 'failed'],
             example: 'pending',
+          },
+        },
+      },
+      WebhookRequest: {
+        type: 'object',
+        required: ['invoiceId', 'status'],
+        additionalProperties: false,
+        properties: {
+          invoiceId: {
+            type: 'string',
+            example: '665f6f1e8b3f3d49e57a6e11',
+          },
+          status: {
+            type: 'string',
+            enum: ['paid', 'failed'],
+            example: 'paid',
           },
         },
       },

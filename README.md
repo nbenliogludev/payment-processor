@@ -7,7 +7,7 @@
 - Node.js + Express + TypeScript
 - MongoDB + Mongoose
 - Redis
-- Jest + Supertest
+- Jest
 - Swagger UI
 
 ## Быстрый старт
@@ -20,7 +20,7 @@ npm run seed:merchant
 npm run dev
 ```
 
-По умолчанию приложение ожидает MongoDB на `mongodb://localhost:27017/payment_processor` и Redis на `redis://localhost:6379`.
+По умолчанию приложение ожидает MongoDB на `mongodb://localhost:27017/payment_processor?replicaSet=rs0` и Redis на `redis://localhost:6379`.
 
 MongoDB и Redis можно поднять локально через Docker Compose:
 
@@ -111,6 +111,32 @@ curl http://localhost:3000/invoice/665f6f1e8b3f3d49e57a6e11
 }
 ```
 
+### POST /webhook
+
+Принимает статус оплаты от платежной системы.
+
+Обязательные headers:
+
+- `X-Signature` — HMAC-SHA256 от raw JSON body, допускается hex или `sha256=<hex>`.
+- `X-Timestamp` — Unix timestamp в миллисекундах или секундах.
+- `X-Nonce` — уникальный nonce запроса.
+
+Пример body:
+
+```json
+{
+  "invoiceId": "665f6f1e8b3f3d49e57a6e11",
+  "status": "paid"
+}
+```
+
+Replay protection устроен в два слоя:
+
+- timestamp ограничивает срок годности запроса;
+- nonce сохраняется в Redis через `SET webhook:nonce:<nonce> 1 NX EX <ttl>`.
+
+Exactly-once зачисление денег обеспечивается MongoDB transaction: invoice переводится в `paid`, создается ledger entry с уникальным `invoiceId`, затем обновляется merchant balance. Повторный `paid` webhook по тому же invoice не увеличивает баланс второй раз.
+
 ## Структура
 
 - `routes` описывают URL и middleware.
@@ -137,6 +163,6 @@ npm start
 
 ## Текущий статус
 
-Реализовано создание и получение инвойса: настройки комиссии берутся из коллекции мерчантов, суммы считаются через decimal arithmetic, а в MongoDB сохраняются как integer minor units (`amountMinor`, `feeMinor`, `amountToReceiveMinor`) вместе с `currencyScale`. `feePercent` считается обычным процентом: `2.5` означает `2.5%`. Мерчанты пока считаются заранее заведенными в базе.
+Реализовано создание и получение инвойса, а также прием webhook-статуса оплаты. Настройки комиссии берутся из коллекции мерчантов, суммы считаются через decimal arithmetic, а в MongoDB сохраняются как integer minor units (`amountMinor`, `feeMinor`, `amountToReceiveMinor`) вместе с `currencyScale`. `feePercent` считается обычным процентом: `2.5` означает `2.5%`. Мерчанты пока считаются заранее заведенными в базе.
 
-Следующие шаги: webhook-подпись, nonce/idempotency, получение статуса инвойса и тесты денежных сценариев webhook.
+Следующие шаги: расширить сценарии балансов, добавить production-аутентификацию мерчантов и договориться о формате ошибок с платежным провайдером.

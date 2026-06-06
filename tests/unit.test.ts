@@ -16,6 +16,7 @@ function loadEnvWith(overrides: NodeJS.ProcessEnv): typeof import('../src/config
   let loadedEnv: typeof import('../src/config/env').default | undefined;
   const managedKeys = [
     'NODE_ENV',
+    'HOST',
     'PORT',
     'MONGO_URI',
     'REDIS_URL',
@@ -139,6 +140,7 @@ describe('env config', () => {
 
     expect(env).toEqual({
       nodeEnv: 'development',
+      host: '0.0.0.0',
       port: 3000,
       mongoUri: 'mongodb://localhost:27017/payment_processor',
       redisUrl: 'redis://localhost:6379',
@@ -150,6 +152,7 @@ describe('env config', () => {
   it('uses configured values and falls back for invalid numbers', () => {
     const env = loadEnvWith({
       NODE_ENV: 'production',
+      HOST: '127.0.0.1',
       PORT: '8080',
       MONGO_URI: 'mongodb://example/payment_processor',
       REDIS_URL: 'redis://example:6379',
@@ -159,6 +162,7 @@ describe('env config', () => {
 
     expect(env).toEqual({
       nodeEnv: 'production',
+      host: '127.0.0.1',
       port: 8080,
       mongoUri: 'mongodb://example/payment_processor',
       redisUrl: 'redis://example:6379',
