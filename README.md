@@ -1,8 +1,8 @@
 # Payment Processor
 
-Небольшой backend-сервис для приема платежей: мерчант создает invoice, платежная система позже присылает webhook со статусом оплаты, а backend безопасно обновляет статус и зачисляет деньги.
+A small backend service for payment processing. A merchant creates an invoice, the payment provider later sends a webhook with the payment status, and the backend safely updates the invoice and credits the merchant balance.
 
-## Что внутри 🧰
+## What's Inside 🧰
 
 - Node.js + Express + TypeScript
 - MongoDB + Mongoose
@@ -11,7 +11,7 @@
 - Swagger UI
 - Jest coverage 100%
 
-## Как это работает 🔁
+## How It Works 🔁
 
 ```mermaid
 flowchart LR
@@ -29,17 +29,17 @@ flowchart LR
   mongoTx --> balances[("MongoDB: merchant balances")]
 ```
 
-Основной сценарий:
+Main flow:
 
-1. Мерчант вызывает `POST /invoice`.
-2. Backend берет `feePercent` из настроек мерчанта.
-3. Считает `fee` и `amountToReceive`.
-4. Сохраняет invoice со статусом `pending`.
-5. Платежная система присылает `POST /webhook` со статусом `paid` или `failed`.
-6. Backend проверяет подпись, timestamp и nonce.
-7. Если статус `paid`, деньги зачисляются один раз через MongoDB transaction.
+1. The merchant calls `POST /invoice`.
+2. The backend reads the merchant's `feePercent`.
+3. It calculates `fee` and `amountToReceive`.
+4. It stores the invoice with status `pending`.
+5. The payment provider sends `POST /webhook` with status `paid` or `failed`.
+6. The backend verifies the signature, timestamp, and nonce.
+7. If the status is `paid`, the merchant balance is credited exactly once inside a MongoDB transaction.
 
-## Быстрый старт 🚀
+## Quick Start 🚀
 
 ```bash
 npm install
@@ -49,16 +49,16 @@ npm run seed:merchant
 npm run dev
 ```
 
-После запуска:
+After startup:
 
 - API: `http://localhost:3000`
 - Swagger UI: `http://localhost:3000/api-docs`
 - OpenAPI JSON: `http://localhost:3000/openapi.json`
 - Health check: `http://localhost:3000/health`
 
-Команда `npm run seed:merchant` создает тестового мерчанта `merchant-1` с комиссией `2.5%`. С ним можно сразу проверять `POST /invoice` в Swagger.
+The `npm run seed:merchant` command creates a test merchant named `merchant-1` with a `2.5%` fee. You can use it right away to test `POST /invoice` in Swagger.
 
-Проверить контейнеры:
+Check Docker services:
 
 ```bash
 docker compose ps
@@ -66,7 +66,7 @@ docker compose ps
 
 ## Environment
 
-Пример уже лежит в `.env.example`:
+The example config is already in `.env.example`:
 
 ```env
 NODE_ENV=development
@@ -78,13 +78,13 @@ WEBHOOK_SECRET=change-me
 WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS=300
 ```
 
-MongoDB запускается как replica set, потому что MongoDB transactions требуют replica set даже локально.
+MongoDB is started as a replica set because MongoDB transactions require a replica set, even in local development.
 
 ## API
 
 ### POST /invoice
 
-Создает invoice со статусом `pending`.
+Creates an invoice with status `pending`.
 
 ```bash
 curl -X POST http://localhost:3000/invoice \
@@ -92,7 +92,7 @@ curl -X POST http://localhost:3000/invoice \
   -d '{"amount":"100.00","currency":"USD","merchantId":"merchant-1"}'
 ```
 
-Пример ответа:
+Example response:
 
 ```json
 {
@@ -111,7 +111,7 @@ curl -X POST http://localhost:3000/invoice \
 
 ### GET /invoice/:id
 
-Возвращает текущий статус invoice и рассчитанные суммы.
+Returns the current invoice status and calculated amounts.
 
 ```bash
 curl http://localhost:3000/invoice/665f6f1e8b3f3d49e57a6e11
@@ -119,13 +119,13 @@ curl http://localhost:3000/invoice/665f6f1e8b3f3d49e57a6e11
 
 ### POST /webhook
 
-Принимает статус оплаты от платежной системы.
+Receives a payment status update from the payment provider.
 
 Headers:
 
-- `X-Signature` - HMAC-SHA256 от raw JSON body.
-- `X-Timestamp` - Unix timestamp в миллисекундах или секундах.
-- `X-Nonce` - уникальный ID доставки webhook.
+- `X-Signature` - HMAC-SHA256 signature of the raw JSON body.
+- `X-Timestamp` - Unix timestamp in milliseconds or seconds.
+- `X-Nonce` - unique webhook delivery ID.
 
 Body:
 
@@ -136,7 +136,7 @@ Body:
 }
 ```
 
-Локальный пример с генерацией подписи:
+Local example with signature generation:
 
 ```bash
 BODY='{"invoiceId":"665f6f1e8b3f3d49e57a6e11","status":"paid"}'
@@ -152,9 +152,9 @@ curl -X POST http://localhost:3000/webhook \
   -d "$BODY"
 ```
 
-Важно: подпись считается именно от того JSON, который отправляется в `-d`. Если добавить пробелы или поменять порядок полей, подпись нужно пересчитать.
+Important: the signature is calculated from the exact JSON string sent in `-d`. If you add spaces or change the field order, recalculate the signature.
 
-## Webhook security 🔐
+## Webhook Security 🔐
 
 ```mermaid
 flowchart TD
@@ -168,79 +168,79 @@ flowchart TD
   transaction --> result["Return current invoice state"]
 ```
 
-Защита устроена так:
+The protection has several layers:
 
-- HMAC-подпись доказывает, что body пришел от доверенной платежной системы.
-- Timestamp ограничивает время жизни webhook.
-- Nonce хранится в Redis 5 минут и защищает от повторной доставки того же запроса.
-- Invoice status + ledger unique index защищают от повторного зачисления денег.
+- HMAC proves that the body was signed by a trusted payment provider.
+- Timestamp limits the lifetime of a webhook request.
+- Nonce is stored in Redis for 5 minutes and protects against repeated delivery of the same request.
+- Invoice status plus a unique ledger index protect against double crediting.
 
-## Деньги и точность 💸
+## Money and Precision 💸
 
-`amount` приходит строкой, например `"100.00"`. Внутри расчет идет через `Decimal`, без floating-point ошибок.
+`amount` is sent as a string, for example `"100.00"`. Calculations use `Decimal`, so there are no floating-point rounding surprises.
 
-В MongoDB суммы сохраняются в minor units:
+MongoDB stores money in minor units:
 
-- `amountMinor: "10000"` для `100.00 USD`
-- `feeMinor: "250"` для `2.50 USD`
-- `amountToReceiveMinor: "9750"` для `97.50 USD`
+- `amountMinor: "10000"` for `100.00 USD`
+- `feeMinor: "250"` for `2.50 USD`
+- `amountToReceiveMinor: "9750"` for `97.50 USD`
 
-Так проще безопасно складывать, сравнивать и хранить деньги.
+This makes money safe to store, compare, and add.
 
-## Идемпотентность ✅
+## Idempotency ✅
 
-Повторный webhook не должен начислять деньги второй раз.
+A repeated webhook must not credit money twice.
 
-В проекте это сделано в несколько слоев:
+This project handles that in a few layers:
 
-- Redis nonce отклоняет одинаковую доставку webhook.
-- Если invoice уже `paid` и снова приходит `paid`, backend просто возвращает текущий invoice.
-- Ledger entry имеет уникальный `invoiceId`.
-- Статус invoice, ledger entry и balance обновляются в одной MongoDB transaction.
+- Redis nonce rejects the same webhook delivery.
+- If an invoice is already `paid` and another `paid` webhook arrives, the backend simply returns the current invoice.
+- Ledger entries have a unique `invoiceId`.
+- Invoice status, ledger entry, and merchant balance are updated in one MongoDB transaction.
 
-## Где смотреть код 🗂️
+## Where to Look in the Code 🗂️
 
 - `src/routes` - HTTP routes.
 - `src/controllers` - HTTP layer: headers/body in, response out.
-- `src/services` - бизнес-логика.
+- `src/services` - business logic.
 - `src/models` - Mongoose schemas.
 - `src/validators` - Zod validation.
-- `src/utils/money.ts` - расчет денег и minor units.
-- `src/docs/openapi.ts` - Swagger/OpenAPI описание.
+- `src/utils/money.ts` - money calculations and minor units.
+- `src/docs/openapi.ts` - Swagger/OpenAPI description.
 
-Самые важные файлы:
+Most important files:
 
-- `src/services/invoice.service.ts` - создание и получение invoice.
+- `src/services/invoice.service.ts` - invoice creation and lookup.
 - `src/services/webhook-security.service.ts` - HMAC, timestamp, nonce.
 - `src/services/webhook.service.ts` - transaction, idempotency, balance update.
-- `src/models/ledger-entry.model.ts` - уникальная ledger-запись на invoice.
+- `src/models/ledger-entry.model.ts` - unique ledger entry per invoice.
 
-## Тесты 🧪
+## Tests 🧪
 
 ```bash
 npm run typecheck
 npm test
 ```
 
-`npm test` запускает Jest с coverage. Порог покрытия настроен на 100% для statements, branches, functions и lines.
+`npm test` runs Jest with coverage. The coverage threshold is set to 100% for statements, branches, functions, and lines.
 
-## Production build
+## Production Build
 
 ```bash
 npm run build
 npm start
 ```
 
-## Допущения
+## Assumptions
 
-- Мерчанты уже существуют в базе. Для локальной проверки есть `npm run seed:merchant`.
-- Реальной интеграции с платежной системой нет, webhook можно отправлять через Swagger, curl или Postman.
-- `WEBHOOK_SECRET=change-me` подходит только для локального запуска.
-- Формат подписи сейчас простой: HMAC от raw body. В production часто подписывают `timestamp + nonce + rawBody`.
+- Merchants already exist in the database. For local testing, use `npm run seed:merchant`.
+- There is no real payment provider integration; webhooks can be sent through Swagger, curl, or Postman.
+- `WEBHOOK_SECRET=change-me` is for local development only.
+- The current signature format is simple: HMAC of the raw body. In production, providers often sign `timestamp + nonce + rawBody`.
 
-## Что можно улучшить дальше
+## What Could Be Improved Next
 
-- Добавить merchant authentication для `POST /invoice`.
-- Завести отдельные секреты webhook для разных платежных провайдеров.
-- Добавить audit log для всех webhook-доставок.
-- Добавить rate limit на публичные endpoints.
+- Add merchant authentication for `POST /invoice`.
+- Use separate webhook secrets for different payment providers.
+- Add an audit log for all webhook deliveries.
+- Add rate limiting for public endpoints.
