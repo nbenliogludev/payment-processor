@@ -111,6 +111,62 @@ const openApiSpec = {
         },
       },
     },
+    '/invoice/{id}': {
+      get: {
+        tags: ['Invoices'],
+        summary: 'Get invoice status',
+        description: 'Returns the current invoice status and calculated amounts.',
+        parameters: [
+          {
+            name: 'id',
+            in: 'path',
+            required: true,
+            schema: {
+              type: 'string',
+              example: '665f6f1e8b3f3d49e57a6e11',
+            },
+          },
+        ],
+        responses: {
+          '200': {
+            description: 'Invoice found',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['data'],
+                  properties: {
+                    data: {
+                      $ref: '#/components/schemas/Invoice',
+                    },
+                  },
+                },
+              },
+            },
+          },
+          '400': {
+            description: 'Invalid invoice id',
+            content: {
+              'application/json': {
+                schema: {
+                  $ref: '#/components/schemas/ErrorResponse',
+                },
+              },
+            },
+          },
+          '404': {
+            description: 'Invoice not found',
+            content: {
+              'application/json': {
+                schema: {
+                  $ref: '#/components/schemas/ErrorResponse',
+                },
+              },
+            },
+          },
+        },
+      },
+    },
   },
   components: {
     schemas: {

@@ -1,3 +1,5 @@
+import { isValidObjectId } from 'mongoose';
+
 import HttpError from '../errors/http-error';
 import InvoiceModel, { type InvoiceDocument } from '../models/invoice.model';
 import MerchantModel from '../models/merchant.model';
@@ -60,6 +62,20 @@ export async function createInvoice({
     amountToReceiveMinor: amounts.amountToReceiveMinor,
     status: 'pending',
   });
+
+  return mapInvoiceResponse(invoice);
+}
+
+export async function getInvoiceById(invoiceId: string): Promise<InvoiceResponse> {
+  if (!isValidObjectId(invoiceId)) {
+    throw new HttpError(400, 'Invalid invoice id');
+  }
+
+  const invoice = await InvoiceModel.findById(invoiceId).exec();
+
+  if (!invoice) {
+    throw new HttpError(404, 'Invoice not found');
+  }
 
   return mapInvoiceResponse(invoice);
 }

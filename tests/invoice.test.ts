@@ -209,3 +209,47 @@ describe('POST /invoice', () => {
     expect(response.body.error.message).toBe('Unsupported currency: BTC');
   });
 });
+
+describe('GET /invoice/:id', () => {
+  it('returns current invoice status and calculated amounts', async () => {
+    const invoice = await InvoiceModel.create({
+      merchantId: 'merchant-1',
+      currency: 'USD',
+      currencyScale: 2,
+      amountMinor: '10000',
+      feePercent: '2.5',
+      feeMinor: '250',
+      amountToReceiveMinor: '9750',
+      status: 'pending',
+    });
+
+    const response = await request(app).get(`/invoice/${invoice._id.toString()}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.data).toEqual({
+      invoiceId: invoice._id.toString(),
+      merchantId: 'merchant-1',
+      amount: '100.00',
+      currency: 'USD',
+      feePercent: '2.5',
+      fee: '2.50',
+      amountToReceive: '97.50',
+      status: 'pending',
+    });
+  });
+
+  it('returns 404 when invoice does not exist', async () => {
+    const missingInvoiceId = new mongoose.Types.ObjectId().toString();
+    const response = await request(app).get(`/invoice/${missingInvoiceId}`);
+
+    expect(response.status).toBe(404);
+    expect(response.body.error.message).toBe('Invoice not found');
+  });
+
+  it('returns 400 for invalid invoice ids', async () => {
+    const response = await request(app).get('/invoice/not-a-valid-id');
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.message).toBe('Invalid invoice id');
+  });
+});
