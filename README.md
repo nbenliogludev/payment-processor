@@ -1,6 +1,6 @@
 # Payment Processor
 
-A small backend service for payment processing. A merchant creates an invoice, the payment provider later sends a webhook with the payment status, and the backend safely updates the invoice and credits the merchant balance.
+A small Express.js API for merchant invoices and signed payment webhooks. It calculates fees, stores pending invoices, and records a merchant credit exactly once when the payment provider confirms that an invoice was paid.
 
 ## What's Inside
 
@@ -15,15 +15,15 @@ A small backend service for payment processing. A merchant creates an invoice, t
 
 ```mermaid
 flowchart LR
-  merchant["Merchant"] -->|"POST /invoice"| backend["Payment Processor API"]
-  backend -->|"read fee settings"| merchants[("MongoDB: merchants")]
-  backend -->|"save pending invoice"| invoices[("MongoDB: invoices")]
-  backend -->|"invoiceId + amounts"| merchant
+  merchant["Merchant"] -->|"POST /invoice"| api["Payment Processor API"]
+  api -->|"read feePercent"| merchants[("MongoDB: merchants")]
+  api -->|"create pending invoice"| invoices[("MongoDB: invoices")]
+  api -->|"invoiceId + calculated amounts"| merchant
 
-  provider["Payment Provider"] -->|"POST /webhook"| backend
-  backend -->|"verify HMAC + timestamp"| security["Webhook security"]
-  security -->|"store nonce with TTL"| redis[("Redis")]
-  backend -->|"transaction"| mongoTx["MongoDB transaction"]
+  provider["Payment Provider"] -->|"POST /webhook"| security["Webhook security middleware"]
+  security -->|"HMAC -> timestamp -> nonce"| redis[("Redis: nonce TTL")]
+  security -->|"valid delivery"| validation["Validate webhook body"]
+  validation -->|"paid or failed"| mongoTx["MongoDB transaction"]
   mongoTx --> invoices
   mongoTx --> ledger[("MongoDB: ledger entries")]
   mongoTx --> balances[("MongoDB: merchant balances")]
@@ -36,8 +36,9 @@ Main flow:
 3. It calculates `fee` and `amountToReceive`.
 4. It stores the invoice with status `pending`.
 5. The payment provider sends `POST /webhook` with status `paid` or `failed`.
-6. The backend verifies the signature, timestamp, and nonce.
-7. If the status is `paid`, the merchant balance is credited atomically inside a MongoDB transaction using `$inc`, so concurrent webhooks for different invoices from the same merchant never overwrite each other.
+6. Security middleware verifies the signature first, then checks timestamp and nonce.
+7. The webhook body is validated only after security checks pass.
+8. If the status is `paid`, the merchant balance is credited atomically inside a MongoDB transaction using `$inc`, so concurrent webhooks for different invoices from the same merchant never overwrite each other.
 
 ## Quick Start
 
@@ -170,22 +171,25 @@ curl -X POST http://localhost:3000/webhook \
 Or use the helper script that generates all headers at once:
 
 ```bash
-npx ts-node src/scripts/generate-webhook-headers.ts <invoiceId> paid
+npm run webhook:headers -- <invoiceId> paid
 ```
 
-The signature is calculated from the exact JSON string sent in the request body. Any change to whitespace or field order requires recalculating the signature.
+The signature is calculated from the exact JSON string sent in the request body. Any change to whitespace or field order requires recalculating the signature. When testing in Swagger, use the same JSON body that was used to calculate the signature, or regenerate the headers after editing the body.
 
 ## Webhook Security
 
+The `/webhook` route runs security middleware before request body validation. This keeps unsigned traffic away from Zod validation and MongoDB work.
+
 ```mermaid
 flowchart TD
-  request["Incoming webhook"] --> signature["Check X-Signature"]
+  request["Incoming webhook"] --> middleware["Security middleware"]
+  middleware --> signature["Check X-Signature"]
   signature --> timestamp["Check X-Timestamp"]
   timestamp --> nonce["Save X-Nonce in Redis with NX + EX"]
-  nonce --> duplicate{"Nonce already exists?"}
+  nonce --> duplicate{"Nonce already used?"}
   duplicate -->|"yes"| reject["409 duplicate webhook"]
-  duplicate -->|"no"| process["Process invoice status"]
-  process --> transaction["MongoDB transaction"]
+  duplicate -->|"no"| validation["Validate webhook body"]
+  validation --> transaction["MongoDB transaction"]
   transaction --> result["Return current invoice state"]
 ```
 
@@ -223,23 +227,6 @@ A repeated webhook must not credit money twice. This project handles that in sev
 - **Unique ledger index** on `invoiceId` — a second `LedgerEntry` for the same invoice cannot be inserted. If a duplicate key error (`code 11000`) is returned, the service reads and returns the current invoice state instead of failing.
 - All three writes (invoice status, ledger entry, balance) happen inside a single MongoDB transaction, so the state is always consistent.
 
-## Where to Look in the Code
-
-- `src/routes` — HTTP routes.
-- `src/controllers` — HTTP layer: headers/body in, response out.
-- `src/services` — business logic.
-- `src/models` — Mongoose schemas.
-- `src/validators` — Zod request validation.
-- `src/utils/money.ts` — money calculations and minor-unit conversion.
-- `src/docs/openapi.ts` — Swagger/OpenAPI description.
-
-Most important files:
-
-- `src/services/invoice.service.ts` — invoice creation and lookup.
-- `src/services/webhook-security.service.ts` — HMAC verification, timestamp check, nonce storage.
-- `src/services/webhook.service.ts` — MongoDB transaction, idempotency logic, atomic balance update.
-- `src/models/ledger-entry.model.ts` — unique ledger entry per invoice (last-resort duplicate guard).
-
 ## Tests
 
 ```bash
@@ -253,8 +240,10 @@ Tests cover:
 
 - Fee calculation for USD (2 decimals), KWD (3 decimals), and JPY (0 decimals).
 - Signature verification: valid, missing, tampered.
+- Security middleware order: unsigned requests are rejected before body validation.
 - Timestamp validation: fresh, stale, missing, non-numeric.
 - Nonce deduplication via Redis.
+- Invalid webhook body after valid security headers.
 - Webhook idempotency: same status delivered twice is accepted and returns the current state.
 - Conflicting status transitions (e.g. `paid` then `failed`) are rejected with 409.
 - Duplicate ledger key fallback (`code 11000`).

@@ -3,11 +3,11 @@
  * for testing the /webhook endpoint.
  *
  * Usage:
- *   npx ts-node src/scripts/generate-webhook-headers.ts [invoiceId] [status]
+ *   npm run webhook:headers -- [invoiceId] [status]
  *
  * Examples:
- *   npx ts-node src/scripts/generate-webhook-headers.ts 6a24ac2db0b638e0ff6c95ec paid
- *   npx ts-node src/scripts/generate-webhook-headers.ts 6a24ac2db0b638e0ff6c95ec failed
+ *   npm run webhook:headers -- 6a24ac2db0b638e0ff6c95ec paid
+ *   npm run webhook:headers -- 6a24ac2db0b638e0ff6c95ec failed
  */
 
 import crypto from 'crypto';

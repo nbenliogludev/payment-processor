@@ -237,7 +237,7 @@ describe('POST /webhook', () => {
     expect(mockMerchantBalanceFindOneAndUpdate).not.toHaveBeenCalled();
   });
 
-  it('rejects invalid webhook request bodies before security checks', async () => {
+  it('rejects unsigned webhook requests before validating the body', async () => {
     const response = await invokeApp(app, {
       method: 'POST',
       path: '/webhook',
@@ -247,9 +247,22 @@ describe('POST /webhook', () => {
       },
     });
 
+    expect(response.status).toBe(401);
+    expect(bodyAs<ApiErrorResponse>(response).error.message).toBe('Missing webhook signature');
+    expect(mockRedisSet).not.toHaveBeenCalled();
+    expect(mockMongooseStartSession).not.toHaveBeenCalled();
+  });
+
+  it('rejects invalid webhook request bodies after security checks pass', async () => {
+    const response = await signedWebhookRequest({
+      invoiceId: '',
+      status: 'processing',
+    });
+
     expect(response.status).toBe(400);
     expect(bodyAs<ApiErrorResponse>(response).error.message).toBe('Invalid request body');
-    expect(mockRedisSet).not.toHaveBeenCalled();
+    expect(mockRedisSet).toHaveBeenCalledTimes(1);
+    expect(mockMongooseStartSession).not.toHaveBeenCalled();
   });
 
   it('rejects invalid signatures before using nonce storage', async () => {
