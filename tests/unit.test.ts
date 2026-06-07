@@ -97,6 +97,16 @@ describe('money utilities', () => {
     );
   });
 
+  it('rejects amounts that cannot be safely credited with atomic increments', () => {
+    expect(() =>
+      calculateInvoiceAmounts({
+        amount: '9007199254740992',
+        currency: 'JPY',
+        feePercent: '0',
+      }),
+    ).toThrow(new HttpError(400, 'amount is too large'));
+  });
+
   it('rejects fee percent outside the allowed range', () => {
     expect(() =>
       calculateInvoiceAmounts({ amount: '10.00', currency: 'USD', feePercent: '-0.01' }),

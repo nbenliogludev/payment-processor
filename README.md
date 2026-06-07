@@ -58,26 +58,37 @@ Main flow:
 
 ## Quick Start
 
-### With Docker (recommended)
+Start MongoDB as a local replica set and start Redis locally. MongoDB transactions require a replica set, even for local development.
+
+Terminal 1:
+
+```bash
+mkdir -p .local/mongodb
+mongod --dbpath .local/mongodb --replSet rs0 --bind_ip localhost
+```
+
+Terminal 2:
+
+```bash
+mongosh --eval 'try { rs.status() } catch (error) { rs.initiate({ _id: "rs0", members: [{ _id: 0, host: "localhost:27017" }] }) }'
+```
+
+Terminal 3:
+
+```bash
+redis-server
+```
+
+Terminal 4:
 
 ```bash
 npm install
 cp .env.example .env
-docker compose up -d
 npm run seed:merchant
 npm run dev
 ```
 
-### Without Docker
-
-Start MongoDB (replica set required for transactions) and Redis manually, then update `.env` with the connection URLs and run:
-
-```bash
-npm install
-cp .env.example .env
-npm run seed:merchant
-npm run dev
-```
+If MongoDB or Redis use different ports on your machine, update `.env` before running the app.
 
 After startup:
 
@@ -88,10 +99,49 @@ After startup:
 
 The `npm run seed:merchant` command creates a test merchant named `merchant-1` with a `2.5%` fee. You can use it right away to test `POST /invoice` in Swagger.
 
-Check Docker services:
+## Manual Test Flow
+
+1. Create an invoice:
 
 ```bash
-docker compose ps
+curl -X POST http://localhost:3000/invoice \
+  -H "Content-Type: application/json" \
+  -d '{"amount":"100.00","currency":"USD","merchantId":"merchant-1"}'
+```
+
+Copy `data.invoiceId` from the response.
+
+2. Generate fresh webhook headers and body:
+
+```bash
+npm run webhook:headers -- <invoiceId> paid
+```
+
+The command prints:
+
+- request body;
+- `X-Signature`;
+- `X-Timestamp`;
+- `X-Nonce`;
+- a ready-to-run curl command.
+
+3. Send the webhook either through curl or Swagger.
+
+For curl, run the command printed by the helper script.
+
+For Swagger:
+
+- open `http://localhost:3000/api-docs`;
+- open `POST /webhook`;
+- paste the generated `X-Signature`, `X-Timestamp`, and `X-Nonce` headers;
+- paste the exact generated JSON body.
+
+The signature depends on the exact JSON body. If you change whitespace, field order, `invoiceId`, or `status`, generate the headers again.
+
+4. Check the invoice:
+
+```bash
+curl http://localhost:3000/invoice/<invoiceId>
 ```
 
 ## Environment
@@ -232,6 +282,8 @@ MongoDB stores amounts in minor units (integer values):
 Invoice minor-unit fields are stored as strings to avoid any risk of precision loss for very large values.
 
 `MerchantBalance.amountMinor` is stored as a **Number**. This allows MongoDB's `$inc` operator to update the balance atomically in a single command, without a read-modify-write cycle. Minor-unit values for realistic payment amounts are well within JavaScript's `Number.MAX_SAFE_INTEGER` (~9×10¹⁵).
+
+Invoice amounts above that safe minor-unit range are rejected before they can be stored or credited.
 
 ## Idempotency
 
