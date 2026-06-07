@@ -359,6 +359,7 @@ const openApiSpec = {
           invoiceId: {
             type: 'string',
             example: '665f6f1e8b3f3d49e57a6e11',
+            description: 'Use an ID returned by POST /invoice.',
           },
           status: {
             type: 'string',

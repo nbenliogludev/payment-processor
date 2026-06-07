@@ -179,9 +179,9 @@ The signature is calculated from the exact JSON string sent in the request body.
 
 ```mermaid
 flowchart TD
-  request["Incoming webhook"] --> timestamp["Check X-Timestamp"]
-  timestamp --> signature["Check X-Signature"]
-  signature --> nonce["Save X-Nonce in Redis with NX + EX"]
+  request["Incoming webhook"] --> signature["Check X-Signature"]
+  signature --> timestamp["Check X-Timestamp"]
+  timestamp --> nonce["Save X-Nonce in Redis with NX + EX"]
   nonce --> duplicate{"Nonce already exists?"}
   duplicate -->|"yes"| reject["409 duplicate webhook"]
   duplicate -->|"no"| process["Process invoice status"]

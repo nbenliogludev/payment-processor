@@ -67,14 +67,14 @@ async function assertNonceIsUnused(nonce?: string): Promise<void> {
     throw new HttpError(401, 'Missing webhook nonce');
   }
 
-  const result = await getRedisClient().sendCommand([
-    'SET',
+  const result = await getRedisClient().set(
     `webhook:nonce:${nonce}`,
     '1',
-    'NX',
-    'EX',
-    String(env.webhookTimestampToleranceSeconds),
-  ]);
+    {
+      NX: true,
+      EX: env.webhookTimestampToleranceSeconds,
+    }
+  );
 
   if (String(result) !== 'OK') {
     throw new HttpError(409, 'Webhook nonce has already been used');
@@ -87,7 +87,7 @@ export async function verifyWebhookSecurity({
   timestamp,
   nonce,
 }: WebhookSecurityInput): Promise<void> {
-  assertTimestampIsFresh(timestamp);
   assertSignatureIsValid(rawBody, signature);
+  assertTimestampIsFresh(timestamp);
   await assertNonceIsUnused(nonce);
 }
