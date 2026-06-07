@@ -4,8 +4,7 @@ const mockRedisSendCommand = jest.fn();
 const mockMongooseStartSession = jest.fn();
 const mockInvoiceFindById = jest.fn();
 const mockLedgerEntryCreate = jest.fn();
-const mockMerchantBalanceFindOne = jest.fn();
-const mockMerchantBalanceCreate = jest.fn();
+const mockMerchantBalanceFindOneAndUpdate = jest.fn();
 
 jest.mock('mongoose', () => {
   const actual = jest.requireActual<typeof import('mongoose')>('mongoose');
@@ -45,8 +44,7 @@ jest.mock('../src/models/ledger-entry.model', () => ({
 jest.mock('../src/models/merchant-balance.model', () => ({
   __esModule: true,
   default: {
-    create: (...args: unknown[]) => mockMerchantBalanceCreate(...args),
-    findOne: (...args: unknown[]) => mockMerchantBalanceFindOne(...args),
+    findOneAndUpdate: (...args: unknown[]) => mockMerchantBalanceFindOneAndUpdate(...args),
   },
 }));
 
@@ -76,10 +74,6 @@ interface MockInvoice {
   save: jest.Mock<Promise<void>, [unknown?]>;
 }
 
-interface MockBalance {
-  amountMinor: string;
-  save: jest.Mock<Promise<void>, [unknown?]>;
-}
 
 interface ApiResponse<T> {
   data: T;
@@ -137,12 +131,6 @@ function makeInvoice(status: MockInvoice['status'] = 'pending'): MockInvoice {
   };
 }
 
-function makeBalance(amountMinor = '500'): MockBalance {
-  return {
-    amountMinor,
-    save: jest.fn(async () => undefined),
-  };
-}
 
 function signedWebhookRequest(
   payload: Record<string, unknown>,
@@ -175,8 +163,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockRedisSendCommand.mockResolvedValue('OK');
   mockLedgerEntryCreate.mockResolvedValue(undefined);
-  mockMerchantBalanceCreate.mockResolvedValue(undefined);
-  mockMerchantBalanceFindOne.mockReturnValue(sessionQuery(null));
+  mockMerchantBalanceFindOneAndUpdate.mockResolvedValue(null);
   mockSession();
 });
 
@@ -209,33 +196,30 @@ describe('POST /webhook', () => {
       ],
       { session: expect.any(Object) },
     );
-    expect(mockMerchantBalanceCreate).toHaveBeenCalledTimes(1);
-    expect(mockMerchantBalanceCreate).toHaveBeenCalledWith(
-      [
-        {
-          merchantId: 'merchant-1',
-          currency: 'USD',
-          currencyScale: 2,
-          amountMinor: '9750',
-        },
-      ],
-      { session: expect.any(Object) },
+    expect(mockMerchantBalanceFindOneAndUpdate).toHaveBeenCalledTimes(1);
+    expect(mockMerchantBalanceFindOneAndUpdate).toHaveBeenCalledWith(
+      { merchantId: 'merchant-1', currency: 'USD' },
+      {
+        $inc: { amountMinor: 9750 },
+        $setOnInsert: { merchantId: 'merchant-1', currency: 'USD', currencyScale: 2 },
+      },
+      { upsert: true, session: expect.any(Object) },
     );
   });
 
-  it('adds paid amount to an existing merchant balance', async () => {
+  it('adds paid amount to an existing merchant balance atomically', async () => {
     const invoice = makeInvoice();
-    const balance = makeBalance('500');
 
     mockInvoiceFindById.mockReturnValue(sessionQuery(invoice));
-    mockMerchantBalanceFindOne.mockReturnValue(sessionQuery(balance));
 
     const response = await signedWebhookRequest({ invoiceId, status: 'paid' });
 
     expect(response.status).toBe(200);
-    expect(balance.amountMinor).toBe('10250');
-    expect(balance.save).toHaveBeenCalledWith({ session: expect.any(Object) });
-    expect(mockMerchantBalanceCreate).not.toHaveBeenCalled();
+    expect(mockMerchantBalanceFindOneAndUpdate).toHaveBeenCalledWith(
+      { merchantId: 'merchant-1', currency: 'USD' },
+      expect.objectContaining({ $inc: { amountMinor: 9750 } }),
+      expect.objectContaining({ upsert: true }),
+    );
   });
 
   it('marks an invoice as failed without crediting merchant balance', async () => {
@@ -250,7 +234,7 @@ describe('POST /webhook', () => {
     expect(response.status).toBe(200);
     expect(bodyAs<ApiResponse<MockInvoice>>(response).data.status).toBe('failed');
     expect(mockLedgerEntryCreate).not.toHaveBeenCalled();
-    expect(mockMerchantBalanceFindOne).not.toHaveBeenCalled();
+    expect(mockMerchantBalanceFindOneAndUpdate).not.toHaveBeenCalled();
   });
 
   it('rejects invalid webhook request bodies before security checks', async () => {
