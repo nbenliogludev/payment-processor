@@ -4,7 +4,7 @@ export interface MerchantBalance {
   merchantId: string;
   currency: string;
   currencyScale: number;
-  amountMinor: string;
+  amountMinor: number;
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -33,8 +33,9 @@ const merchantBalanceSchema = new Schema<MerchantBalance>(
       min: 0,
     },
     amountMinor: {
-      type: String,
+      type: Number,
       required: true,
+      min: 0,
     },
   },
   {

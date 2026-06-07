@@ -1,4 +1,3 @@
-import Decimal from 'decimal.js';
 import mongoose from 'mongoose';
 
 import HttpError from '../errors/http-error';
@@ -7,10 +6,6 @@ import LedgerEntryModel from '../models/ledger-entry.model';
 import MerchantBalanceModel from '../models/merchant-balance.model';
 import { mapInvoiceResponse, type InvoiceResponse } from './invoice.service';
 import type { WebhookInput } from '../validators/webhook.validator';
-
-function addMinorUnits(left: string, right: string): string {
-  return new Decimal(left).plus(right).toFixed(0);
-}
 
 async function creditMerchantBalance(
   invoice: InvoiceDocument,
@@ -30,30 +25,18 @@ async function creditMerchantBalance(
     { session },
   );
 
-  const balance = await MerchantBalanceModel.findOne({
-    merchantId: invoice.merchantId,
-    currency: invoice.currency,
-  })
-    .session(session)
-    .exec();
-
-  if (!balance) {
-    await MerchantBalanceModel.create(
-      [
-        {
-          merchantId: invoice.merchantId,
-          currency: invoice.currency,
-          currencyScale: invoice.currencyScale,
-          amountMinor: invoice.amountToReceiveMinor,
-        },
-      ],
-      { session },
-    );
-    return;
-  }
-
-  balance.amountMinor = addMinorUnits(balance.amountMinor, invoice.amountToReceiveMinor);
-  await balance.save({ session });
+  await MerchantBalanceModel.findOneAndUpdate(
+    { merchantId: invoice.merchantId, currency: invoice.currency },
+    {
+      $inc: { amountMinor: Number(invoice.amountToReceiveMinor) },
+      $setOnInsert: {
+        merchantId: invoice.merchantId,
+        currency: invoice.currency,
+        currencyScale: invoice.currencyScale,
+      },
+    },
+    { upsert: true, session },
+  );
 }
 
 async function mapExistingInvoice(invoiceId: string): Promise<InvoiceResponse> {
