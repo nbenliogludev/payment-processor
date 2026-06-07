@@ -1,15 +1,3 @@
-/**
- * Script to generate correct X-Timestamp, X-Nonce and X-Signature headers
- * for testing the /webhook endpoint.
- *
- * Usage:
- *   npm run webhook:headers -- [invoiceId] [status]
- *
- * Examples:
- *   npm run webhook:headers -- 6a24ac2db0b638e0ff6c95ec paid
- *   npm run webhook:headers -- 6a24ac2db0b638e0ff6c95ec failed
- */
-
 import crypto from 'crypto';
 import 'dotenv/config';
 
@@ -17,17 +5,13 @@ const secret = process.env.WEBHOOK_SECRET ?? 'change-me';
 const invoiceId = process.argv[2] ?? '6a24ac2db0b638e0ff6c95ec';
 const status = process.argv[3] ?? 'paid';
 
-// 1. Build the exact JSON body (no extra spaces to keep the signature deterministic)
 const body = JSON.stringify({ invoiceId, status });
 const rawBody = Buffer.from(body, 'utf8');
 
-// 2. Timestamp — milliseconds (13 digits), must be within WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS
 const timestamp = String(Date.now());
 
-// 3. Nonce — UUID v4 (unique per request, stored in Redis to prevent replay)
 const nonce = crypto.randomUUID();
 
-// 4. Signature — HMAC-SHA256 over the raw JSON body
 const signature = 'sha256=' + crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
 
 console.log('\n=== Webhook request headers & body ===\n');

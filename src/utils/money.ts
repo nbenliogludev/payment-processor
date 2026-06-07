@@ -17,6 +17,8 @@ const CURRENCY_FRACTION_DIGITS: Record<string, number> = {
   USD: 2,
 };
 
+const MAX_SAFE_MINOR_UNITS = new Decimal(Number.MAX_SAFE_INTEGER);
+
 export interface InvoiceAmounts {
   amount: string;
   amountMinor: string;
@@ -54,6 +56,12 @@ function ensureDecimalScale(
 
 function minorUnitMultiplier(currencyScale: number): Decimal {
   return new Decimal(10).pow(currencyScale);
+}
+
+function ensureSafeMinorUnits(minorUnits: string): void {
+  if (new Decimal(minorUnits).gt(MAX_SAFE_MINOR_UNITS)) {
+    throw new HttpError(400, 'amount is too large');
+  }
 }
 
 export function getCurrencyFractionDigits(currency: string): number {
@@ -105,6 +113,8 @@ export function calculateInvoiceAmounts({
   ensureDecimalScale(amountDecimal, 'amount', currencyScale);
 
   const amountMinor = decimalToMinorUnits(amountDecimal, currencyScale);
+  ensureSafeMinorUnits(amountMinor);
+
   const feeMinor = decimalToMinorUnits(amountDecimal.mul(feePercentDecimal).div(100), currencyScale);
   const amountToReceiveMinor = new Decimal(amountMinor).minus(feeMinor).toFixed(0);
 

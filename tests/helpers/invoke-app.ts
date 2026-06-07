@@ -5,9 +5,7 @@ import { Duplex } from 'node:stream';
 import type { Express } from 'express';
 
 class MockSocket extends Duplex {
-  _read(): void {
-    // No-op test socket.
-  }
+  _read(): void {}
 
   _write(_chunk: unknown, _encoding: BufferEncoding, callback: () => void): void {
     callback();

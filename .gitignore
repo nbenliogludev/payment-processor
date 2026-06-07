@@ -2,6 +2,7 @@ node_modules/
 dist/
 .env
 coverage/
+.local/
 .nyc_output/
 npm-debug.log*
 .DS_Store
