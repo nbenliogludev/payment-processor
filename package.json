@@ -11,7 +11,8 @@
     "start": "node dist/server.js",
     "test": "NODE_ENV=test jest --coverage --runInBand",
     "test:watch": "NODE_ENV=test jest --watch",
-    "typecheck": "tsc --noEmit -p tsconfig.test.json"
+    "typecheck": "tsc --noEmit -p tsconfig.test.json",
+    "webhook:headers": "tsx src/scripts/generate-webhook-headers.ts"
   },
   "keywords": [],
   "author": "",

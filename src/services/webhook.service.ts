@@ -61,6 +61,10 @@ export async function processWebhookStatus({
   let response: InvoiceResponse | undefined;
 
   try {
+    // withTransaction automatically retries the callback on TransientTransactionError (e.g. WriteConflict).
+    // If two identical webhooks start concurrently, one will win and save the invoice status to 'paid'.
+    // The other will get a write conflict, retry the transaction, read the updated 'paid' status,
+    // and safely return the current state without double-crediting.
     await session.withTransaction(async () => {
       const invoice = await InvoiceModel.findById(invoiceId).session(session).exec();
 

@@ -14,8 +14,14 @@ async function bootstrap(): Promise<void> {
   async function shutdown(signal: NodeJS.Signals): Promise<void> {
     console.log(`${signal} received, shutting down`);
 
+    const forceExit = setTimeout(() => {
+      console.error('Forcing shutdown after timeout');
+      process.exit(1);
+    }, 10_000);
+
     server.close(async () => {
       await Promise.all([disconnectMongo(), disconnectRedis()]);
+      clearTimeout(forceExit);
       process.exit(0);
     });
   }

@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 
-const mockRedisSendCommand = jest.fn();
+const mockRedisSet = jest.fn();
 const mockMongooseStartSession = jest.fn();
 const mockInvoiceFindById = jest.fn();
 const mockLedgerEntryCreate = jest.fn();
@@ -23,7 +23,7 @@ jest.mock('mongoose', () => {
 
 jest.mock('../src/config/redis', () => ({
   getRedisClient: () => ({
-    sendCommand: mockRedisSendCommand,
+    set: mockRedisSet,
   }),
 }));
 
@@ -161,7 +161,7 @@ function signedWebhookRequest(
 
 beforeEach(() => {
   jest.clearAllMocks();
-  mockRedisSendCommand.mockResolvedValue('OK');
+  mockRedisSet.mockResolvedValue('OK');
   mockLedgerEntryCreate.mockResolvedValue(undefined);
   mockMerchantBalanceFindOneAndUpdate.mockResolvedValue(null);
   mockSession();
@@ -249,7 +249,7 @@ describe('POST /webhook', () => {
 
     expect(response.status).toBe(400);
     expect(bodyAs<ApiErrorResponse>(response).error.message).toBe('Invalid request body');
-    expect(mockRedisSendCommand).not.toHaveBeenCalled();
+    expect(mockRedisSet).not.toHaveBeenCalled();
   });
 
   it('rejects invalid signatures before using nonce storage', async () => {
@@ -263,7 +263,7 @@ describe('POST /webhook', () => {
 
     expect(response.status).toBe(401);
     expect(bodyAs<ApiErrorResponse>(response).error.message).toBe('Invalid webhook signature');
-    expect(mockRedisSendCommand).not.toHaveBeenCalled();
+    expect(mockRedisSet).not.toHaveBeenCalled();
     expect(mockMongooseStartSession).not.toHaveBeenCalled();
   });
 
@@ -282,11 +282,11 @@ describe('POST /webhook', () => {
     expect(bodyAs<ApiErrorResponse>(response).error.message).toBe(
       'Webhook timestamp is outside the allowed window',
     );
-    expect(mockRedisSendCommand).not.toHaveBeenCalled();
+    expect(mockRedisSet).not.toHaveBeenCalled();
   });
 
   it('rejects already used nonces', async () => {
-    mockRedisSendCommand.mockResolvedValue(null);
+    mockRedisSet.mockResolvedValue(null);
 
     const response = await signedWebhookRequest({
       invoiceId,
