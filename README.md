@@ -99,50 +99,6 @@ After startup:
 - OpenAPI JSON: `http://localhost:3000/openapi.json`
 - Health check: `http://localhost:3000/health`
 
-## Manual Test Flow
-
-1. Create an invoice:
-
-```bash
-curl -X POST http://localhost:3000/invoice \
-  -H "Content-Type: application/json" \
-  -d '{"amount":"100.00","currency":"USD","merchantId":"merchant-1"}'
-```
-
-Copy `data.invoiceId` from the response.
-
-2. Generate fresh webhook headers and body:
-
-```bash
-npm run webhook:headers -- <invoiceId> paid
-```
-
-The command prints fresh test data:
-
-- request body;
-- `X-Signature`;
-- `X-Timestamp`;
-- `X-Nonce`;
-- a ready-to-run curl command.
-
-3. Send the webhook either through curl or Swagger.
-
-For curl, run the command printed by the helper script.
-
-For Swagger:
-
-- open `http://localhost:3000/api-docs`;
-- open `POST /webhook`;
-- paste the generated `X-Signature`, `X-Timestamp`, and `X-Nonce` headers;
-- paste the exact generated JSON body.
-
-Both options use the same generated headers and body. The signature depends on the exact JSON body. If you change whitespace, field order, `invoiceId`, or `status`, generate the headers again.
-
-4. Check the invoice:
-
-```bash
-curl http://localhost:3000/invoice/<invoiceId>
-```
 
 ## API
 
@@ -200,29 +156,41 @@ Body:
 }
 ```
 
-Local example with signature generation:
+#### How to test manually
 
-```bash
-BODY='{"invoiceId":"665f6f1e8b3f3d49e57a6e11","status":"paid"}'
-TIMESTAMP="$(date +%s)000"
-NONCE="$(uuidgen)"
-SIGNATURE="$(node -e "const crypto=require('crypto'); const body=process.argv[1]; const secret=process.env.WEBHOOK_SECRET || 'change-me'; console.log(crypto.createHmac('sha256', secret).update(body).digest('hex'))" "$BODY")"
+Because webhooks are signed, you cannot simply send arbitrary JSON to this endpoint. You must generate valid `X-Signature`, `X-Timestamp`, and `X-Nonce` headers for your exact JSON body.
 
-curl -X POST http://localhost:3000/webhook \
-  -H "Content-Type: application/json" \
-  -H "X-Timestamp: $TIMESTAMP" \
-  -H "X-Nonce: $NONCE" \
-  -H "X-Signature: $SIGNATURE" \
-  -d "$BODY"
-```
-
-Or use the helper script that generates all headers at once:
+We provide a helper script to generate these automatically:
 
 ```bash
 npm run webhook:headers -- <invoiceId> paid
 ```
 
-The signature is calculated from the exact JSON string sent in the request body. Any change to whitespace or field order requires recalculating the signature. When testing in Swagger, use the same JSON body that was used to calculate the signature, or regenerate the headers after editing the body.
+**Testing via cURL**
+
+The helper script will output a complete, ready-to-copy `curl` command. It looks like this:
+
+```bash
+curl -X POST http://localhost:3000/webhook \
+  -H "Content-Type: application/json" \
+  -H "X-Timestamp: 1735742400000" \
+  -H "X-Nonce: 7f8a8b6d-3b6e-43d7-9b2a-7c20e21c5b41" \
+  -H "X-Signature: sha256=8f5d..." \
+  -d '{"invoiceId":"665f6f1e8b3f3d49e57a6e11","status":"paid"}'
+```
+
+Just run the output command in your terminal to simulate the payment provider.
+
+**Testing via Swagger UI**
+
+If you prefer testing through the UI (`http://localhost:3000/api-docs`):
+
+1. Generate the headers using the helper script.
+2. Open the `POST /webhook` endpoint in Swagger.
+3. Paste the generated `X-Signature`, `X-Timestamp`, and `X-Nonce` values into their respective fields.
+4. Paste the exact JSON body provided by the script into the request body field.
+
+**Important:** The signature is tied to the exact JSON string. If you change any whitespace, the order of the fields, or the `invoiceId` in Swagger, the signature will become invalid. Always regenerate the headers if you modify the body.
 
 ## Webhook Security
 
