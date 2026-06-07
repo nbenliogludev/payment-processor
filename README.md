@@ -15,18 +15,36 @@ A small Express.js API for merchant invoices and signed payment webhooks. It cal
 
 ```mermaid
 flowchart LR
-  merchant["Merchant"] -->|"POST /invoice"| api["Payment Processor API"]
-  api -->|"read feePercent"| merchants[("MongoDB: merchants")]
-  api -->|"create pending invoice"| invoices[("MongoDB: invoices")]
-  api -->|"invoiceId + calculated amounts"| merchant
+  merchant["Merchant"]
+  provider["Payment Provider"]
+  merchants[("MongoDB: merchants")]
+  invoices[("MongoDB: invoices")]
+  redis[("Redis: nonce TTL")]
+  ledger[("MongoDB: ledger entries")]
+  balances[("MongoDB: merchant balances")]
 
-  provider["Payment Provider"] -->|"POST /webhook"| security["Webhook security middleware"]
-  security -->|"HMAC -> timestamp -> nonce"| redis[("Redis: nonce TTL")]
-  security -->|"valid delivery"| validation["Validate webhook body"]
-  validation -->|"paid or failed"| mongoTx["MongoDB transaction"]
+  subgraph api["Payment Processor API"]
+    invoiceRoute["POST /invoice route"]
+    webhookRoute["POST /webhook route"]
+    security["Webhook security middleware"]
+    validation["Validate webhook body"]
+    mongoTx["MongoDB transaction"]
+
+    webhookRoute --> security
+    security -->|"signature -> timestamp -> nonce OK"| validation
+    validation -->|"paid or failed"| mongoTx
+  end
+
+  merchant -->|"POST /invoice"| invoiceRoute
+  invoiceRoute -->|"read feePercent"| merchants
+  invoiceRoute -->|"create pending invoice"| invoices
+  invoiceRoute -->|"invoiceId + calculated amounts"| merchant
+
+  provider -->|"POST /webhook"| webhookRoute
+  security -->|"store/check nonce"| redis
   mongoTx --> invoices
-  mongoTx --> ledger[("MongoDB: ledger entries")]
-  mongoTx --> balances[("MongoDB: merchant balances")]
+  mongoTx --> ledger
+  mongoTx --> balances
 ```
 
 Main flow:
@@ -182,7 +200,8 @@ The `/webhook` route runs security middleware before request body validation. Th
 
 ```mermaid
 flowchart TD
-  request["Incoming webhook"] --> middleware["Security middleware"]
+  request["POST /webhook request"] --> route["Payment Processor API route"]
+  route --> middleware["Security middleware"]
   middleware --> signature["Check X-Signature"]
   signature --> timestamp["Check X-Timestamp"]
   timestamp --> nonce["Save X-Nonce in Redis with NX + EX"]
