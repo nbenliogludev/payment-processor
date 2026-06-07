@@ -99,7 +99,27 @@ After startup:
 - OpenAPI JSON: `http://localhost:3000/openapi.json`
 - Health check: `http://localhost:3000/health`
 
+## Tests
 
+```bash
+npm run typecheck
+npm test
+```
+
+`npm test` runs Jest with coverage. The coverage threshold is set to 100% for statements, branches, functions, and lines.
+
+Tests cover:
+
+- Fee calculation for USD (2 decimals), KWD (3 decimals), and JPY (0 decimals).
+- Signature verification: valid, missing, tampered.
+- Security middleware order: unsigned requests are rejected before body validation.
+- Timestamp validation: fresh, stale, missing, non-numeric.
+- Nonce deduplication via Redis.
+- Invalid webhook body after valid security headers.
+- Webhook idempotency: same status delivered twice is accepted and returns the current state.
+- Conflicting status transitions (e.g. `paid` then `failed`) are rejected with 409.
+- Duplicate ledger key fallback (`code 11000`).
+- Error handler masking of internal errors.
 ## API
 
 ### POST /invoice
@@ -245,27 +265,7 @@ A repeated webhook must not credit money twice. This project handles that in sev
 - **Unique ledger index** on `invoiceId` — a second `LedgerEntry` for the same invoice cannot be inserted. If a duplicate key error (`code 11000`) is returned, the service reads and returns the current invoice state instead of failing.
 - All three writes (invoice status, ledger entry, balance) happen inside a single MongoDB transaction, so the state is always consistent.
 
-## Tests
 
-```bash
-npm run typecheck
-npm test
-```
-
-`npm test` runs Jest with coverage. The coverage threshold is set to 100% for statements, branches, functions, and lines.
-
-Tests cover:
-
-- Fee calculation for USD (2 decimals), KWD (3 decimals), and JPY (0 decimals).
-- Signature verification: valid, missing, tampered.
-- Security middleware order: unsigned requests are rejected before body validation.
-- Timestamp validation: fresh, stale, missing, non-numeric.
-- Nonce deduplication via Redis.
-- Invalid webhook body after valid security headers.
-- Webhook idempotency: same status delivered twice is accepted and returns the current state.
-- Conflicting status transitions (e.g. `paid` then `failed`) are rejected with 409.
-- Duplicate ledger key fallback (`code 11000`).
-- Error handler masking of internal errors.
 
 ## Production Build
 
