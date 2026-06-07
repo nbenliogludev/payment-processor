@@ -7,9 +7,9 @@ A small backend service for payment processing. A merchant creates an invoice, t
 - Node.js + Express + TypeScript
 - MongoDB + Mongoose
 - Redis
-- Decimal money calculations
+- Decimal money calculations (Decimal.js)
 - Swagger UI
-- Jest coverage 100%
+- Jest — 100% statement, branch, function, and line coverage
 
 ## How It Works
 
@@ -37,14 +37,27 @@ Main flow:
 4. It stores the invoice with status `pending`.
 5. The payment provider sends `POST /webhook` with status `paid` or `failed`.
 6. The backend verifies the signature, timestamp, and nonce.
-7. If the status is `paid`, the merchant balance is credited exactly once inside a MongoDB transaction.
+7. If the status is `paid`, the merchant balance is credited atomically inside a MongoDB transaction using `$inc`, so concurrent webhooks for different invoices from the same merchant never overwrite each other.
 
 ## Quick Start
+
+### With Docker (recommended)
 
 ```bash
 npm install
 cp .env.example .env
 docker compose up -d
+npm run seed:merchant
+npm run dev
+```
+
+### Without Docker
+
+Start MongoDB (replica set required for transactions) and Redis manually, then update `.env` with the connection URLs and run:
+
+```bash
+npm install
+cp .env.example .env
 npm run seed:merchant
 npm run dev
 ```
@@ -79,6 +92,8 @@ WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS=300
 ```
 
 MongoDB is started as a replica set because MongoDB transactions require a replica set, even in local development.
+
+`WEBHOOK_SECRET=change-me` is a placeholder for local development only. In any other environment this must be replaced with a strong random value before starting the service.
 
 ## API
 
@@ -123,9 +138,9 @@ Receives a payment status update from the payment provider.
 
 Headers:
 
-- `X-Signature` - HMAC-SHA256 signature of the raw JSON body.
-- `X-Timestamp` - Unix timestamp in milliseconds or seconds.
-- `X-Nonce` - unique webhook delivery ID.
+- `X-Signature` - HMAC-SHA256 of the raw JSON request body, optionally prefixed with `sha256=`.
+- `X-Timestamp` - Unix timestamp in milliseconds or seconds. Must be within the tolerance window of the current time.
+- `X-Nonce` - Unique delivery ID for this request (e.g. a UUID). Stored in Redis for the duration of the tolerance window to block replays.
 
 Body:
 
@@ -152,7 +167,13 @@ curl -X POST http://localhost:3000/webhook \
   -d "$BODY"
 ```
 
-Important: the signature is calculated from the exact JSON string sent in `-d`. If you add spaces or change the field order, recalculate the signature.
+Or use the helper script that generates all headers at once:
+
+```bash
+npx ts-node src/scripts/generate-webhook-headers.ts <invoiceId> paid
+```
+
+The signature is calculated from the exact JSON string sent in the request body. Any change to whitespace or field order requires recalculating the signature.
 
 ## Webhook Security
 
@@ -170,50 +191,54 @@ flowchart TD
 
 The protection has several layers:
 
-- HMAC proves that the body was signed by a trusted payment provider.
-- Timestamp limits the lifetime of a webhook request.
-- Nonce is stored in Redis for 5 minutes and protects against repeated delivery of the same request.
-- Invoice status plus a unique ledger index protect against double crediting.
+- **HMAC** proves that the body was signed by a trusted payment provider.
+- **Timestamp** limits the lifetime of a webhook request to the configured tolerance window (default: 300 seconds).
+- **Nonce** is stored in Redis for the duration of the tolerance window and blocks repeated delivery of the same request.
+- **Invoice status** check returns the current state if the invoice is already in the requested status, and rejects any attempt to transition away from a final status.
+- **Unique ledger index** on `invoiceId` prevents a second credit record from being inserted even if the balance update is somehow retried.
 
 ## Money and Precision
 
-`amount` is sent as a string, for example `"100.00"`. Calculations use `Decimal`, so there are no floating-point rounding surprises.
+`amount` is sent as a string, for example `"100.00"`. All intermediate calculations use `Decimal.js` with `ROUND_HALF_UP`, so there are no floating-point rounding errors.
 
-MongoDB stores money in minor units:
+MongoDB stores amounts in minor units (integer values):
 
-- `amountMinor: "10000"` for `100.00 USD`
-- `feeMinor: "250"` for `2.50 USD`
-- `amountToReceiveMinor: "9750"` for `97.50 USD`
+| Field | Example value | Meaning |
+|---|---|---|
+| `Invoice.amountMinor` | `"10000"` | 100.00 USD |
+| `Invoice.feeMinor` | `"250"` | 2.50 USD |
+| `Invoice.amountToReceiveMinor` | `"9750"` | 97.50 USD |
 
-This makes money safe to store, compare, and add.
+Invoice minor-unit fields are stored as strings to avoid any risk of precision loss for very large values.
+
+`MerchantBalance.amountMinor` is stored as a **Number**. This allows MongoDB's `$inc` operator to update the balance atomically in a single command, without a read-modify-write cycle. Minor-unit values for realistic payment amounts are well within JavaScript's `Number.MAX_SAFE_INTEGER` (~9×10¹⁵).
 
 ## Idempotency
 
-A repeated webhook must not credit money twice.
+A repeated webhook must not credit money twice. This project handles that in several layers:
 
-This project handles that in a few layers:
-
-- Redis nonce rejects the same webhook delivery.
-- If an invoice is already `paid` and another `paid` webhook arrives, the backend simply returns the current invoice.
-- Ledger entries have a unique `invoiceId`.
-- Invoice status, ledger entry, and merchant balance are updated in one MongoDB transaction.
+- **Redis nonce** rejects any request that uses a nonce already seen within the tolerance window.
+- **Invoice status check** — if an invoice is already in the requested status, the current state is returned without any writes.
+- **Atomic `$inc` on merchant balance** — the balance is incremented in a single MongoDB command, so concurrent paid webhooks for different invoices from the same merchant always accumulate correctly and never overwrite each other.
+- **Unique ledger index** on `invoiceId` — a second `LedgerEntry` for the same invoice cannot be inserted. If a duplicate key error (`code 11000`) is returned, the service reads and returns the current invoice state instead of failing.
+- All three writes (invoice status, ledger entry, balance) happen inside a single MongoDB transaction, so the state is always consistent.
 
 ## Where to Look in the Code
 
-- `src/routes` - HTTP routes.
-- `src/controllers` - HTTP layer: headers/body in, response out.
-- `src/services` - business logic.
-- `src/models` - Mongoose schemas.
-- `src/validators` - Zod validation.
-- `src/utils/money.ts` - money calculations and minor units.
-- `src/docs/openapi.ts` - Swagger/OpenAPI description.
+- `src/routes` — HTTP routes.
+- `src/controllers` — HTTP layer: headers/body in, response out.
+- `src/services` — business logic.
+- `src/models` — Mongoose schemas.
+- `src/validators` — Zod request validation.
+- `src/utils/money.ts` — money calculations and minor-unit conversion.
+- `src/docs/openapi.ts` — Swagger/OpenAPI description.
 
 Most important files:
 
-- `src/services/invoice.service.ts` - invoice creation and lookup.
-- `src/services/webhook-security.service.ts` - HMAC, timestamp, nonce.
-- `src/services/webhook.service.ts` - transaction, idempotency, balance update.
-- `src/models/ledger-entry.model.ts` - unique ledger entry per invoice.
+- `src/services/invoice.service.ts` — invoice creation and lookup.
+- `src/services/webhook-security.service.ts` — HMAC verification, timestamp check, nonce storage.
+- `src/services/webhook.service.ts` — MongoDB transaction, idempotency logic, atomic balance update.
+- `src/models/ledger-entry.model.ts` — unique ledger entry per invoice (last-resort duplicate guard).
 
 ## Tests
 
@@ -224,6 +249,17 @@ npm test
 
 `npm test` runs Jest with coverage. The coverage threshold is set to 100% for statements, branches, functions, and lines.
 
+Tests cover:
+
+- Fee calculation for USD (2 decimals), KWD (3 decimals), and JPY (0 decimals).
+- Signature verification: valid, missing, tampered.
+- Timestamp validation: fresh, stale, missing, non-numeric.
+- Nonce deduplication via Redis.
+- Webhook idempotency: same status delivered twice is accepted and returns the current state.
+- Conflicting status transitions (e.g. `paid` then `failed`) are rejected with 409.
+- Duplicate ledger key fallback (`code 11000`).
+- Error handler masking of internal errors.
+
 ## Production Build
 
 ```bash
@@ -233,14 +269,17 @@ npm start
 
 ## Assumptions
 
-- Merchants already exist in the database. For local testing, use `npm run seed:merchant`.
-- There is no real payment provider integration; webhooks can be sent through Swagger, curl, or Postman.
-- `WEBHOOK_SECRET=change-me` is for local development only.
-- The current signature format is simple: HMAC of the raw body. In production, providers often sign `timestamp + nonce + rawBody`.
+- Merchants are pre-seeded in the database. For local testing use `npm run seed:merchant`.
+- There is no real payment provider integration. Webhooks can be sent through Swagger, curl, or the included helper script.
+- `WEBHOOK_SECRET=change-me` is a development placeholder and must be replaced in any real environment.
+- The signature covers only the raw request body. Some payment providers sign a composite payload such as `timestamp + "." + rawBody` (Stripe's approach). The current format is intentionally simple; the `X-Timestamp` header still provides replay protection via the tolerance window.
+- The nonce is written to Redis before the MongoDB transaction commits. If the transaction fails after the nonce has been stored, a retry of the same delivery will be rejected as a duplicate. In practice this is acceptable because the payment provider is expected to send a new delivery with a new nonce; however, in a stricter system the nonce write would be deferred until after a successful commit, or an outbox pattern would be used.
 
-## What Could Be Improved Next
+## What Could Be Improved
 
-- Add merchant authentication for `POST /invoice`.
-- Use separate webhook secrets for different payment providers.
-- Add an audit log for all webhook deliveries.
-- Add rate limiting for public endpoints.
+- **Nonce write ordering** — store the nonce after the transaction commits (or use an outbox/transactional outbox pattern) to prevent losing a legitimate retry when MongoDB fails mid-transaction.
+- **Composite signature** — include the timestamp in the signed payload (`timestamp.rawBody`) to bind each delivery cryptographically to its timestamp and prevent body reuse with a different timestamp.
+- **Per-provider webhook secrets** — one secret per payment provider instead of a single global secret.
+- **Merchant authentication** for `POST /invoice`.
+- **Rate limiting** on public endpoints.
+- **Audit log** of all webhook deliveries with their outcomes.
