@@ -58,37 +58,39 @@ Main flow:
 
 ## Quick Start
 
-Start MongoDB as a local replica set and start Redis locally. MongoDB transactions require a replica set, even for local development.
-
-Terminal 1:
-
-```bash
-mkdir -p .local/mongodb
-mongod --dbpath .local/mongodb --replSet rs0 --bind_ip localhost
-```
-
-Terminal 2:
-
-```bash
-mongosh --eval 'try { rs.status() } catch (error) { rs.initiate({ _id: "rs0", members: [{ _id: 0, host: "localhost:27017" }] }) }'
-```
-
-Terminal 3:
-
-```bash
-redis-server
-```
-
-Terminal 4:
+Install dependencies and create your local environment file:
 
 ```bash
 npm install
 cp .env.example .env
+```
+
+Open `.env` and set the values for your local setup:
+
+```env
+NODE_ENV=development
+HOST=0.0.0.0
+PORT=3000
+MONGO_URI=mongodb://localhost:27017/payment_processor?replicaSet=rs0
+REDIS_URL=redis://localhost:6379
+WEBHOOK_SECRET=change-me
+WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS=300
+```
+
+Use your own MongoDB and Redis URLs if they run somewhere else. The important parts are:
+
+- `MONGO_URI` must point to a MongoDB replica set, because webhook processing uses MongoDB transactions.
+- `REDIS_URL` must point to Redis, which stores webhook nonces for the replay window.
+- `WEBHOOK_SECRET` is used to generate and verify webhook signatures. `change-me` is fine only for local testing.
+
+Make sure MongoDB and Redis are running, then seed a test merchant and start the API:
+
+```bash
 npm run seed:merchant
 npm run dev
 ```
 
-If MongoDB or Redis use different ports on your machine, update `.env` before running the app.
+The `npm run seed:merchant` command creates a test merchant named `merchant-1` with a `2.5%` fee. You can use it right away to test `POST /invoice` in Swagger.
 
 After startup:
 
@@ -96,8 +98,6 @@ After startup:
 - Swagger UI: `http://localhost:3000/api-docs`
 - OpenAPI JSON: `http://localhost:3000/openapi.json`
 - Health check: `http://localhost:3000/health`
-
-The `npm run seed:merchant` command creates a test merchant named `merchant-1` with a `2.5%` fee. You can use it right away to test `POST /invoice` in Swagger.
 
 ## Manual Test Flow
 
@@ -117,7 +117,7 @@ Copy `data.invoiceId` from the response.
 npm run webhook:headers -- <invoiceId> paid
 ```
 
-The command prints:
+The command prints fresh test data:
 
 - request body;
 - `X-Signature`;
@@ -136,31 +136,13 @@ For Swagger:
 - paste the generated `X-Signature`, `X-Timestamp`, and `X-Nonce` headers;
 - paste the exact generated JSON body.
 
-The signature depends on the exact JSON body. If you change whitespace, field order, `invoiceId`, or `status`, generate the headers again.
+Both options use the same generated headers and body. The signature depends on the exact JSON body. If you change whitespace, field order, `invoiceId`, or `status`, generate the headers again.
 
 4. Check the invoice:
 
 ```bash
 curl http://localhost:3000/invoice/<invoiceId>
 ```
-
-## Environment
-
-The example config is already in `.env.example`:
-
-```env
-NODE_ENV=development
-HOST=0.0.0.0
-PORT=3000
-MONGO_URI=mongodb://localhost:27017/payment_processor?replicaSet=rs0
-REDIS_URL=redis://localhost:6379
-WEBHOOK_SECRET=change-me
-WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS=300
-```
-
-MongoDB is started as a replica set because MongoDB transactions require a replica set, even in local development.
-
-`WEBHOOK_SECRET=change-me` is a placeholder for local development only. In any other environment this must be replaced with a strong random value before starting the service.
 
 ## API
 
@@ -323,20 +305,3 @@ Tests cover:
 npm run build
 npm start
 ```
-
-## Assumptions
-
-- Merchants are pre-seeded in the database. For local testing use `npm run seed:merchant`.
-- There is no real payment provider integration. Webhooks can be sent through Swagger, curl, or the included helper script.
-- `WEBHOOK_SECRET=change-me` is a development placeholder and must be replaced in any real environment.
-- The signature covers only the raw request body. Some payment providers sign a composite payload such as `timestamp + "." + rawBody` (Stripe's approach). The current format is intentionally simple; the `X-Timestamp` header still provides replay protection via the tolerance window.
-- The nonce is written to Redis before the MongoDB transaction commits. If the transaction fails after the nonce has been stored, a retry of the same delivery will be rejected as a duplicate. In practice this is acceptable because the payment provider is expected to send a new delivery with a new nonce; however, in a stricter system the nonce write would be deferred until after a successful commit, or an outbox pattern would be used.
-
-## What Could Be Improved
-
-- **Nonce write ordering** — store the nonce after the transaction commits (or use an outbox/transactional outbox pattern) to prevent losing a legitimate retry when MongoDB fails mid-transaction.
-- **Composite signature** — include the timestamp in the signed payload (`timestamp.rawBody`) to bind each delivery cryptographically to its timestamp and prevent body reuse with a different timestamp.
-- **Per-provider webhook secrets** — one secret per payment provider instead of a single global secret.
-- **Merchant authentication** for `POST /invoice`.
-- **Rate limiting** on public endpoints.
-- **Audit log** of all webhook deliveries with their outcomes.
