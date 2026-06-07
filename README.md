@@ -24,23 +24,21 @@ flowchart LR
   balances[("MongoDB: merchant balances")]
 
   subgraph api["Payment Processor API"]
-    invoiceRoute["POST /invoice route"]
-    webhookRoute["POST /webhook route"]
+    createInvoice["Create invoice"]
     security["Webhook security middleware"]
     validation["Validate webhook body"]
     mongoTx["MongoDB transaction"]
 
-    webhookRoute --> security
     security -->|"signature -> timestamp -> nonce OK"| validation
     validation -->|"paid or failed"| mongoTx
   end
 
-  merchant -->|"POST /invoice"| invoiceRoute
-  invoiceRoute -->|"read feePercent"| merchants
-  invoiceRoute -->|"create pending invoice"| invoices
-  invoiceRoute -->|"invoiceId + calculated amounts"| merchant
+  merchant -->|"POST /invoice"| createInvoice
+  createInvoice -->|"read feePercent"| merchants
+  createInvoice -->|"create pending invoice"| invoices
+  createInvoice -->|"invoiceId + calculated amounts"| merchant
 
-  provider -->|"POST /webhook"| webhookRoute
+  provider -->|"POST /webhook"| security
   security -->|"store/check nonce"| redis
   mongoTx --> invoices
   mongoTx --> ledger
@@ -200,8 +198,7 @@ The `/webhook` route runs security middleware before request body validation. Th
 
 ```mermaid
 flowchart TD
-  request["POST /webhook request"] --> route["Payment Processor API route"]
-  route --> middleware["Security middleware"]
+  request["POST /webhook request"] --> middleware["Payment Processor API: security middleware"]
   middleware --> signature["Check X-Signature"]
   signature --> timestamp["Check X-Timestamp"]
   timestamp --> nonce["Save X-Nonce in Redis with NX + EX"]
