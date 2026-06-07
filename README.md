@@ -4,7 +4,7 @@ A small Express.js API for merchant invoices and signed payment webhooks. It cal
 
 ---
 
-## 📦 What's Inside
+## What's Inside
 
 - Node.js + Express + TypeScript
 - MongoDB + Mongoose
@@ -15,7 +15,7 @@ A small Express.js API for merchant invoices and signed payment webhooks. It cal
 
 ---
 
-## ⚙️ How It Works
+## How It Works
 
 ```mermaid
 flowchart LR
@@ -62,7 +62,7 @@ Main flow:
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 Install dependencies and create your local environment file:
 
@@ -107,7 +107,7 @@ After startup:
 
 ---
 
-## 🧪 Tests
+## Tests
 
 ```bash
 npm run typecheck
@@ -130,7 +130,7 @@ Tests cover:
 - Error handler masking of internal errors.
 ---
 
-## 🔌 API
+## API
 
 ### POST /invoice
 
@@ -224,7 +224,7 @@ If you prefer testing through the UI (`http://localhost:3000/api-docs`):
 
 ---
 
-## 🛡️ Webhook Security
+## Webhook Security
 
 The `/webhook` route runs security middleware before request body validation. This keeps unsigned traffic away from Zod validation and MongoDB work.
 
@@ -251,7 +251,7 @@ The protection has several layers:
 
 ---
 
-## 💰 Money and Precision
+## Money and Precision
 
 `amount` is sent as a string, for example `"100.00"`. All intermediate calculations use `Decimal.js` with `ROUND_HALF_UP`, so there are no floating-point rounding errors.
 
@@ -271,7 +271,7 @@ Invoice amounts above that safe minor-unit range are rejected before they can be
 
 ---
 
-## 🔄 Idempotency
+## Idempotency
 
 A repeated webhook must not credit money twice. This project handles that in several layers:
 
@@ -285,7 +285,7 @@ A repeated webhook must not credit money twice. This project handles that in sev
 
 ---
 
-## 🏭 Production Build
+## Production Build
 
 ```bash
 npm run build
