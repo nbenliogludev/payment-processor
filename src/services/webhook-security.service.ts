@@ -87,7 +87,7 @@ export async function verifyWebhookSecurity({
   timestamp,
   nonce,
 }: WebhookSecurityInput): Promise<void> {
-  assertTimestampIsFresh(timestamp);
   assertSignatureIsValid(rawBody, signature);
+  assertTimestampIsFresh(timestamp);
   await assertNonceIsUnused(nonce);
 }
