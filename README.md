@@ -2,7 +2,9 @@
 
 A small Express.js API for merchant invoices and signed payment webhooks. It calculates fees, stores pending invoices, and records a merchant credit exactly once when the payment provider confirms that an invoice was paid.
 
-## What's Inside
+---
+
+## 📦 What's Inside
 
 - Node.js + Express + TypeScript
 - MongoDB + Mongoose
@@ -11,7 +13,9 @@ A small Express.js API for merchant invoices and signed payment webhooks. It cal
 - Swagger UI
 - Jest — 100% statement, branch, function, and line coverage
 
-## How It Works
+---
+
+## ⚙️ How It Works
 
 ```mermaid
 flowchart LR
@@ -56,7 +60,9 @@ Main flow:
 7. The webhook body is validated only after security checks pass.
 8. If the status is `paid`, the merchant balance is credited atomically inside a MongoDB transaction using `$inc`, so concurrent webhooks for different invoices from the same merchant never overwrite each other.
 
-## Quick Start
+---
+
+## 🚀 Quick Start
 
 Install dependencies and create your local environment file:
 
@@ -99,7 +105,9 @@ After startup:
 - OpenAPI JSON: `http://localhost:3000/openapi.json`
 - Health check: `http://localhost:3000/health`
 
-## Tests
+---
+
+## 🧪 Tests
 
 ```bash
 npm run typecheck
@@ -120,7 +128,9 @@ Tests cover:
 - Conflicting status transitions (e.g. `paid` then `failed`) are rejected with 409.
 - Duplicate ledger key fallback (`code 11000`).
 - Error handler masking of internal errors.
-## API
+---
+
+## 🔌 API
 
 ### POST /invoice
 
@@ -212,7 +222,9 @@ If you prefer testing through the UI (`http://localhost:3000/api-docs`):
 
 **Important:** The signature is tied to the exact JSON string. If you change any whitespace, the order of the fields, or the `invoiceId` in Swagger, the signature will become invalid. Always regenerate the headers if you modify the body.
 
-## Webhook Security
+---
+
+## 🛡️ Webhook Security
 
 The `/webhook` route runs security middleware before request body validation. This keeps unsigned traffic away from Zod validation and MongoDB work.
 
@@ -237,7 +249,9 @@ The protection has several layers:
 - **Invoice status** check returns the current state if the invoice is already in the requested status, and rejects any attempt to transition away from a final status.
 - **Unique ledger index** on `invoiceId` prevents a second credit record from being inserted even if the balance update is somehow retried.
 
-## Money and Precision
+---
+
+## 💰 Money and Precision
 
 `amount` is sent as a string, for example `"100.00"`. All intermediate calculations use `Decimal.js` with `ROUND_HALF_UP`, so there are no floating-point rounding errors.
 
@@ -255,7 +269,9 @@ Invoice minor-unit fields are stored as strings to avoid any risk of precision l
 
 Invoice amounts above that safe minor-unit range are rejected before they can be stored or credited.
 
-## Idempotency
+---
+
+## 🔄 Idempotency
 
 A repeated webhook must not credit money twice. This project handles that in several layers:
 
@@ -267,7 +283,9 @@ A repeated webhook must not credit money twice. This project handles that in sev
 
 
 
-## Production Build
+---
+
+## 🏭 Production Build
 
 ```bash
 npm run build
